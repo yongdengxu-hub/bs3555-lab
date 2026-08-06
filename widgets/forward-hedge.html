@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Forward hedging P&amp;L — BST3553</title>
+<link rel="stylesheet" href="../assets/styles.css" />
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap">
+    <div style="flex:1 1 auto;">
+      <div class="code">BST3553 · interactive lab</div>
+      <h1>Forward hedging P&amp;L</h1>
+      <p class="sub">Do nothing, lock the forward, or buy the option: one chart, every future.</p>
+    </div>
+    <a class="crumb" href="../index.html">← back to lab</a>
+  </div>
+</header>
+
+<main class="wrap">
+  <p class="muted" style="margin-top:18px;">
+    A UK importer owes <b>USD 10m in six months</b> (home currency GBP, so S = GBP per USD). Three choices: stay
+    unhedged and pay whatever the spot turns out to be; buy dollars <b>forward</b> at F (free, binding, symmetric);
+    or buy a <b>call on USD</b> at strike X = F (costs a premium, caps the worst case, keeps the upside). Drag the
+    future spot and the volatility; watch which line you'd rather be on.
+  </p>
+
+  <div class="card">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:12px;">
+      <label class="small">spot today, GBP/USD <span id="v-s"></span><input type="range" id="s" min="0.68" max="0.82" step="0.002" value="0.742"/></label>
+      <label class="small">GBP rate, % p.a. <span id="v-r"></span><input type="range" id="r" min="0" max="8" step="0.25" value="3.75"/></label>
+      <label class="small">USD rate, % p.a. <span id="v-rs"></span><input type="range" id="rs" min="0" max="8" step="0.25" value="3.5"/></label>
+      <label class="small">volatility, % p.a. <span id="v-sig"></span><input type="range" id="sig" min="4" max="20" step="0.5" value="8"/></label>
+      <label class="small">spot in 6 months S<sub>T</sub> <span id="v-st"></span><input type="range" id="st" min="0.62" max="0.88" step="0.002" value="0.78"/></label>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:10px;">
+      <div class="metric" id="m-f"></div>
+      <div class="metric" id="m-prem"></div>
+      <div class="metric" id="m-cost"></div>
+      <div class="metric" id="m-best"></div>
+    </div>
+
+    <div class="small muted" style="margin-bottom:2px;">Total GBP cost of USD 10m at maturity, per strategy (lower = better; dot = your S<sub>T</sub>)</div>
+    <div style="position:relative;height:250px;"><canvas id="chart"></canvas></div>
+    <div class="maths" style="display:block;margin-top:10px;" id="note"></div>
+  </div>
+
+  <div class="why">
+    <h3>Why this matters — real examples</h3>
+    <p class="lead">Every treasury in every importing and exporting firm makes exactly this three-way choice, every quarter.</p>
+    <div class="exlist">
+      <div class="ex house">
+        <p class="h"><span class="pill house">Your money</span>Marmitegate, October 2016</p>
+        <p class="b">After the referendum sank sterling 13%, Unilever demanded a 10% price rise and Tesco pulled Marmite from its website. Prices hadn't moved in July because importers' forwards, set months earlier, were still paying out; the standoff came exactly when those hedges rolled off. Hedging buys time, not immunity.</p>
+        <span class="k">→ The link: slide S<sub>T</sub> down 13% and compare the forward line with the unhedged one: that gap is a supermarket price war.</span>
+      </div>
+      <div class="ex fin">
+        <p class="h"><span class="pill fin">Financial markets</span>Airlines and airframes hedge in billions</p>
+        <p class="b">Airbus prices aircraft in dollars but pays wages in euros; its treasury runs a multi-year rolling forward book of tens of billions. Annual reports disclose the average locked rates: a real, audited version of the flat line on this chart.</p>
+        <span class="k">→ The link: the forward line's flatness is why CFOs can promise a margin to shareholders before the year happens.</span>
+      </div>
+      <div class="ex macro">
+        <p class="h"><span class="pill macro">Macro</span>Options before referendums</p>
+        <p class="b">Ahead of June 2016, one-month GBP option prices exploded (overnight implied vol reached about 50%). Firms that paid the premium kept their upside when Remain looked likely and were protected when Leave won: the kinked line on your chart, priced for a coin flip.</p>
+        <span class="k">→ The link: push volatility up and watch the option premium, and the height of the kinked line, rise with the fear.</span>
+      </div>
+    </div>
+  </div>
+
+  <h3>How to use it in class</h3>
+  <p class="small muted">Ask: "who prefers the forward, who prefers the option, and what would make you switch?" Then raise σ from 8 to 16 and watch the option camp shrink as insurance gets dear: that is vega, one lecture early.</p>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="../assets/fxlib.js"></script>
+<script>
+let chart = null;
+const NOTIONAL = 10e6;
+function upd() {
+  const S = +document.getElementById("s").value;
+  const rpa = +document.getElementById("r").value, rspa = +document.getElementById("rs").value;
+  const sig = +document.getElementById("sig").value / 100, ST = +document.getElementById("st").value;
+  const tau = 0.5, r = rpa/100*tau, rs = rspa/100*tau, sigEff = sig*Math.sqrt(tau);
+  const g = gk(S, cipForward(S, r, rs), r, rs, sigEff);   // X = F (at-the-money-forward)
+  const F = g.F, X = F, prem = g.call;                     // GBP per USD
+  const premT = prem * (1 + r);                            // carry premium to T for fair comparison
+  document.getElementById("v-s").textContent = fmt(S,3);
+  document.getElementById("v-r").textContent = rpa.toFixed(2)+"%";
+  document.getElementById("v-rs").textContent = rspa.toFixed(2)+"%";
+  document.getElementById("v-sig").textContent = (sig*100).toFixed(1)+"%";
+  document.getElementById("v-st").textContent = fmt(ST,3);
+
+  const cost = st => ({
+    none: st * NOTIONAL,
+    fwd: F * NOTIONAL,
+    opt: (Math.min(st, X) + premT) * NOTIONAL
+  });
+  const c = cost(ST);
+  const best = Object.entries(c).sort((a,b)=>a[1]-b[1])[0][0];
+  const names = { none: "unhedged", fwd: "forward", opt: "call option" };
+  document.getElementById("m-f").innerHTML = `<div class="small muted">forward F (=X)</div><b>${fmt(F,4)}</b>`;
+  document.getElementById("m-prem").innerHTML = `<div class="small muted">option premium</div><b>${fmt(prem,4)} /USD (£${fmt0(prem*NOTIONAL)})</b>`;
+  document.getElementById("m-cost").innerHTML = `<div class="small muted">cost at your S<sub>T</sub></div><b>£${fmt0(c.none)} / £${fmt0(c.fwd)} / £${fmt0(c.opt)}</b>`;
+  document.getElementById("m-best").innerHTML = `<div class="small muted">cheapest ex post</div><b>${names[best]}</b>`;
+  document.getElementById("note").innerHTML =
+    `Unhedged pays S<sub>T</sub>·10m. Forward pays F·10m = £${fmt0(F*NOTIONAL)} whatever happens.
+     The call caps the rate at X + FV(premium) = ${fmt(X+premT,4)} but rides the spot down when the dollar weakens.
+     None dominates: the ranking depends on S<sub>T</sub>, which you do not know at t. That is the whole point.`;
+
+  const xs = [], a=[], b=[], d2=[], dot=[];
+  for (let s0 = 0.62; s0 <= 0.881; s0 += 0.004) {
+    xs.push(s0.toFixed(3));
+    const cc = cost(s0);
+    a.push(cc.none/1e6); b.push(cc.fwd/1e6); d2.push(cc.opt/1e6);
+    dot.push(Math.abs(s0-ST) < 0.002 ? cc.none/1e6 : null);
+  }
+  if (chart) chart.destroy();
+  chart = new Chart(document.getElementById("chart"), {
+    type: "line",
+    data: { labels: xs, datasets: [
+      { label: "unhedged", data: a, borderColor: "#888", pointRadius: 0, borderWidth: 2, borderDash: [6,4] },
+      { label: "forward", data: b, borderColor: BRAND, pointRadius: 0, borderWidth: 2.5 },
+      { label: "call option", data: d2, borderColor: "#275D8C", pointRadius: 0, borderWidth: 2.5 },
+      { label: "your S_T", data: dot, borderColor: "#B98A2C", backgroundColor: "#B98A2C", pointRadius: 5, showLine: false }
+    ]},
+    options: baseChartOpts("spot at maturity S_T (GBP/USD)", "GBP cost of USD 10m (millions)")
+  });
+}
+document.querySelectorAll("input").forEach(el => el.addEventListener("input", upd));
+upd();
+</script>
+</main>
+</body>
+</html>

@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Option payoff builder — BST3553</title>
+<link rel="stylesheet" href="../assets/styles.css" />
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap">
+    <div style="flex:1 1 auto;">
+      <div class="code">BST3553 · interactive lab</div>
+      <h1>Option payoff builder</h1>
+      <p class="sub">Stack calls, puts and forwards; watch payoff and profit. Lecture 5, exam question 4.</p>
+    </div>
+    <a class="crumb" href="../index.html">← back to lab</a>
+  </div>
+</header>
+
+<main class="wrap">
+  <p class="muted" style="margin-top:18px;">
+    Every option strategy is just kinked lines added together. Build up to three legs (each a call, put or forward,
+    long or short, with its own strike and premium) and read two lines: <b>payoff</b> (at expiry, ignoring what you
+    paid) and <b>profit</b> (payoff minus premiums). The presets rebuild the module's stars: the straddle that
+    printed money on referendum night, and the KIKO structure that ruined exporters.
+  </p>
+
+  <div class="card">
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+      <button class="chip pre" data-p="call">long call</button>
+      <button class="chip pre" data-p="put">long put</button>
+      <button class="chip pre" data-p="coveredput">receivable + put (floor)</button>
+      <button class="chip pre active" data-p="straddle">straddle</button>
+      <button class="chip pre" data-p="synfwd">call − put = forward</button>
+      <button class="chip pre" data-p="kiko">the KIKO trap</button>
+    </div>
+
+    <div id="legs" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px;margin-bottom:12px;"></div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:10px;">
+      <div class="metric" id="m-cost"></div>
+      <div class="metric" id="m-maxl"></div>
+      <div class="metric" id="m-maxg"></div>
+      <div class="metric" id="m-be"></div>
+    </div>
+
+    <div class="small muted" style="margin-bottom:2px;">Payoff (dashed) and profit (solid) at expiry, per unit of FC</div>
+    <div style="position:relative;height:260px;"><canvas id="chart"></canvas></div>
+    <div class="maths" style="display:block;margin-top:10px;" id="note"></div>
+  </div>
+
+  <div class="why">
+    <h3>Why this matters — real examples</h3>
+    <p class="lead">Payoff diagrams are the grammar of every structured product ever sold, honest or otherwise.</p>
+    <div class="exlist">
+      <div class="ex macro">
+        <p class="h"><span class="pill macro">Macro</span>Referendum night, June 2016</p>
+        <p class="b">On 22 June 2016 cable traded at 1.48 and a one-month straddle cost about 4 cents. Friday morning: 1.32. The straddle paid roughly 12 cents net without requiring any view on the result, only the view that 1.48 would not survive the night. Overnight implied volatility had reached about 50%: the market pricing a coin flip.</p>
+        <span class="k">→ The link: load the straddle preset and read its breakevens: that is exactly the bet.</span>
+      </div>
+      <div class="ex fin">
+        <p class="h"><span class="pill fin">Financial markets</span>KIKO, Korea 2008: "zero cost" wasn't</p>
+        <p class="b">Exporters funded the puts they wanted by writing calls, often on twice the notional. When the won collapsed the short calls knocked in and losses were unbounded; an estimated $3bn+ vanished and litigation ran for years. The payoff line tells you instantly what the salesman didn't.</p>
+        <span class="k">→ The link: load the KIKO preset and look left and right: floor on one side, cliff on the other.</span>
+      </div>
+      <div class="ex house">
+        <p class="h"><span class="pill house">Your money</span>Structured deposits in the bank branch</p>
+        <p class="b">"Capital-protected FX-linked bonds" sold at retail are a deposit plus a bought (or, in bad versions, sold) option. Drawing the product's payoff before signing is the single most useful consumer-finance skill this module teaches.</p>
+        <span class="k">→ The link: any product whose brochure can't be drawn with three of these legs is hiding a fourth.</span>
+      </div>
+    </div>
+  </div>
+
+  <h3>How to use it in class</h3>
+  <p class="small muted">Tutorial 3's replication MCQs become instant here: build "short put + long call" and watch the forward appear (put–call parity, drawn). Then ask which leg to add to make the KIKO safe, and price the honesty.</p>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="../assets/fxlib.js"></script>
+<script>
+const PRESETS = {
+  call: [{ kind: "call", dir: 1, X: 1.30, prem: 0.05 }],
+  put: [{ kind: "put", dir: 1, X: 1.30, prem: 0.05 }],
+  coveredput: [{ kind: "spot", dir: 1, X: 0, prem: 0 }, { kind: "put", dir: 1, X: 1.30, prem: 0.05 }],
+  straddle: [{ kind: "call", dir: 1, X: 1.30, prem: 0.04 }, { kind: "put", dir: 1, X: 1.30, prem: 0.04 }],
+  synfwd: [{ kind: "call", dir: 1, X: 1.30, prem: 0.05 }, { kind: "put", dir: -1, X: 1.30, prem: 0.05 }],
+  kiko: [{ kind: "put", dir: 1, X: 1.30, prem: 0.04 }, { kind: "call", dir: -1, X: 1.34, prem: 0.02 }, { kind: "call", dir: -1, X: 1.34, prem: 0.02 }]
+};
+let legs = JSON.parse(JSON.stringify(PRESETS.straddle)), chart = null;
+
+document.querySelectorAll(".pre").forEach(b => b.addEventListener("click", e => {
+  document.querySelectorAll(".pre").forEach(x => x.classList.remove("active"));
+  e.target.classList.add("active");
+  legs = JSON.parse(JSON.stringify(PRESETS[e.target.dataset.p]));
+  renderLegs(); upd();
+}));
+
+function renderLegs() {
+  const z = document.getElementById("legs");
+  z.innerHTML = "";
+  legs.forEach((l, i) => {
+    const div = document.createElement("div");
+    div.className = "metric";
+    div.innerHTML = `<div class="small muted">leg ${i + 1}</div>
+      <select data-i="${i}" data-f="kind">
+        <option value="call"${l.kind==="call"?" selected":""}>call</option>
+        <option value="put"${l.kind==="put"?" selected":""}>put</option>
+        <option value="forward"${l.kind==="forward"?" selected":""}>forward</option>
+        <option value="spot"${l.kind==="spot"?" selected":""}>underlying (FC)</option>
+      </select>
+      <select data-i="${i}" data-f="dir">
+        <option value="1"${l.dir===1?" selected":""}>long</option>
+        <option value="-1"${l.dir===-1?" selected":""}>short</option>
+      </select>
+      X <input type="number" step="0.01" value="${l.X}" data-i="${i}" data-f="X" style="width:64px;"/>
+      prem <input type="number" step="0.005" value="${l.prem}" data-i="${i}" data-f="prem" style="width:64px;"/>`;
+    z.appendChild(div);
+  });
+  z.querySelectorAll("select,input").forEach(el => el.addEventListener("input", e => {
+    const i = +e.target.dataset.i, f = e.target.dataset.f;
+    legs[i][f] = f === "kind" ? e.target.value : +e.target.value;
+    upd();
+  }));
+}
+
+function upd() {
+  const xs = [], pay = [], prof = [];
+  const totPrem = legs.reduce((a, l) => a + l.dir * (l.kind === "call" || l.kind === "put" ? l.prem : 0), 0);
+  for (let s0 = 1.00; s0 <= 1.6001; s0 += 0.005) {
+    xs.push(s0.toFixed(3));
+    let vPay = 0;
+    legs.forEach(l => {
+      let v = 0;
+      if (l.kind === "call") v = Math.max(s0 - l.X, 0);
+      else if (l.kind === "put") v = Math.max(l.X - s0, 0);
+      else if (l.kind === "forward") v = s0 - l.X;
+      else v = s0 - 1.30;   // underlying shown relative to 1.30 so it fits the chart
+      vPay += l.dir * v;
+    });
+    pay.push(vPay);
+    prof.push(vPay - totPrem);
+  }
+  const maxL = Math.min(...prof), maxG = Math.max(...prof);
+  const bes = [];
+  for (let i = 1; i < prof.length; i++) if ((prof[i-1] < 0) !== (prof[i] < 0)) bes.push(xs[i]);
+  document.getElementById("m-cost").innerHTML = `<div class="small muted">net premium paid</div><b>${fmt(totPrem, 3)}</b>`;
+  document.getElementById("m-maxl").innerHTML = `<div class="small muted">worst profit on range</div><b class="${maxL<-0.2?"bad":""}">${fmt(maxL, 3)}${maxL <= Math.min(...pay) - totPrem + 1e-9 && legs.some(l=>l.dir===-1&&(l.kind==="call"))?" (unbounded below beyond range)":""}</b>`;
+  document.getElementById("m-maxg").innerHTML = `<div class="small muted">best profit on range</div><b>${fmt(maxG, 3)}</b>`;
+  document.getElementById("m-be").innerHTML = `<div class="small muted">breakevens</div><b>${bes.length ? bes.join(", ") : "none in range"}</b>`;
+  document.getElementById("note").innerHTML =
+    `Profit = payoff − net premium (${fmt(totPrem,3)}). Short option legs collect premium but owe the payoff: check the slope at the far right and far left; any downward slope that never flattens is an unbounded loss waiting for a bad year.`;
+
+  if (chart) chart.destroy();
+  chart = new Chart(document.getElementById("chart"), {
+    type: "line",
+    data: { labels: xs, datasets: [
+      { label: "payoff", data: pay, borderColor: "#888", borderDash: [6,4], pointRadius: 0, borderWidth: 1.6 },
+      { label: "profit", data: prof, borderColor: BRAND, pointRadius: 0, borderWidth: 2.5 },
+      { label: "zero", data: xs.map(()=>0), borderColor: "#bbb", pointRadius: 0, borderWidth: 1 }
+    ]},
+    options: baseChartOpts("spot at expiry S_T", "per unit of FC")
+  });
+}
+renderLegs(); upd();
+</script>
+</main>
+</body>
+</html>

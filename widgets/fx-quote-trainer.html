@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FX quote &amp; arbitrage trainer — BST3553</title>
+<link rel="stylesheet" href="../assets/styles.css" />
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap">
+    <div style="flex:1 1 auto;">
+      <div class="code">BST3553 · interactive lab</div>
+      <h1>FX quote &amp; arbitrage trainer</h1>
+      <p class="sub">Invert quotes, build the synthetic cross, spot the arbitrage. Exam question 1.</p>
+    </div>
+    <a class="crumb" href="../index.html">← back to lab</a>
+  </div>
+</header>
+
+<main class="wrap">
+  <p class="muted" style="margin-top:18px;">
+    Every year, exam Q1 hands you two primary quotes against a vehicle currency and a direct cross quote, and asks:
+    invert them, build the <b>synthetic</b> cross (worst-case pairing: bid÷ask one way, ask÷bid the other), then compare
+    the two bands. <b>No overlap = arbitrage. Overlap but different = shopping around.</b> This trainer deals you fresh
+    quotes forever; work each one on paper, then reveal.
+  </p>
+
+  <div class="card">
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin-bottom:12px;">
+      <div id="quotes" style="font-size:1.05rem;font-weight:600;"></div>
+      <div style="display:flex;gap:8px;">
+        <button id="reveal">Reveal the answer</button>
+        <button id="newq" style="font-size:12px;padding:4px 9px;">↻ new quotes</button>
+      </div>
+    </div>
+
+    <div id="answerZone" style="display:none;">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:10px;">
+        <div class="metric" id="m-inv1"></div>
+        <div class="metric" id="m-inv2"></div>
+        <div class="metric" id="m-syn"></div>
+        <div class="metric" id="m-verdict"></div>
+      </div>
+      <div class="small muted" style="margin-bottom:2px;">The band diagram: synthetic vs direct (bars span bid → ask)</div>
+      <div style="position:relative;height:130px;"><canvas id="bandChart"></canvas></div>
+      <div id="story" class="maths" style="margin-top:10px;"></div>
+    </div>
+  </div>
+
+  <div class="why">
+    <h3>Why this matters — real examples</h3>
+    <p class="lead">Cross-rate arithmetic is the entry test of every FX desk, and the "bands must overlap" logic polices $9.6 trillion of daily trading.</p>
+    <div class="exlist">
+      <div class="ex fin">
+        <p class="h"><span class="pill fin">Financial markets</span>Triangular arbitrage now lives for milliseconds</p>
+        <p class="b">Academic studies of EBS tick data found triangular arbitrage opportunities in EUR/USD/JPY lasting under a second, harvested almost entirely by algorithms. The BIS 2025 survey puts the dollar on one side of 89% of all trades precisely because everyone routes through the deepest market, exactly like your synthetic leg.</p>
+        <span class="k">→ The link: the "no overlap" verdicts you just classified are what those algorithms check, thousands of times a second.</span>
+      </div>
+      <div class="ex macro">
+        <p class="h"><span class="pill macro">Monetary policy</span>The sterling flash crash, 7 October 2016</p>
+        <p class="b">At 7:07am Hong Kong time, GBP/USD fell about 9% in 40 seconds, and different venues printed different prices for the same pound: textbook arbitrage that nobody could execute because liquidity had vanished. The BIS post-mortem is a case study in what happens when the trainer's tidy bands break down.</p>
+        <span class="k">→ The link: arbitrage enforces the law of one price only when someone can actually trade both legs.</span>
+      </div>
+      <div class="ex house">
+        <p class="h"><span class="pill house">Your money</span>The airport kiosk is a 5–10% spread</p>
+        <p class="b">The interbank GBP/USD spread you see here is a few pips (about 0.02%). Airport bureaux routinely quote spreads of 5–10%: the same mathematics, a thousand times the margin. Once you can read a two-way quote, you can never be surprised by "0% commission" again.</p>
+        <span class="k">→ The link: compare the spread in today's dealt quotes with the one at your departure gate.</span>
+      </div>
+    </div>
+  </div>
+
+  <h3>How to use it in class</h3>
+  <p class="small muted">Deal a set of quotes, give the room three minutes on paper (invert, synthesise, classify), then reveal. The verdict sentence, who trades where and why, is where the 13 marks live in exam Q1(c).</p>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="../assets/fxlib.js"></script>
+<script>
+const PAIRS = [
+  { veh: "ZAR", a: "GBP", b: "AUD", la: 23.3, lb: 11.9 },
+  { veh: "USD", a: "GBP", b: "EUR", la: 1.347, lb: 1.152 },
+  { veh: "JPY", a: "GBP", b: "USD", la: 214.4, lb: 159.2 },
+  { veh: "CZK", a: "GBP", b: "NZD", la: 28.7, lb: 13.75 },
+  { veh: "INR", a: "CAD", b: "AUD", la: 61.8, lb: 55.4 }
+];
+let R = rng(Date.now() % 100000), cur = null, chart = null;
+
+function deal() {
+  const p = PAIRS[Math.floor(R() * PAIRS.length)];
+  const s1 = p.la * (1 + (R() - 0.5) * 0.02), sp1 = s1 * (0.0005 + R() * 0.004);
+  const s2 = p.lb * (1 + (R() - 0.5) * 0.02), sp2 = s2 * (0.0005 + R() * 0.004);
+  const q1 = [s1 - sp1 / 2, s1 + sp1 / 2];           // veh/a
+  const q2 = [s2 - sp2 / 2, s2 + sp2 / 2];           // veh/b
+  const synBid = q1[0] / q2[1], synAsk = q1[1] / q2[0];   // b per a: (veh/a)/(veh/b)
+  // place the direct quote: 40% inside, 30% above, 30% below
+  const mid = (synBid + synAsk) / 2, w = (synAsk - synBid);
+  const u = R(); let dmid;
+  if (u < 0.4) dmid = mid + (R() - 0.5) * w * 0.6;
+  else if (u < 0.7) dmid = synAsk + w * (0.35 + R());
+  else dmid = synBid - w * (0.35 + R());
+  const dsp = w * (0.3 + R() * 0.5);
+  const dir = [dmid - dsp / 2, dmid + dsp / 2];
+  cur = { p, q1, q2, synBid, synAsk, dir };
+  document.getElementById("quotes").innerHTML =
+    `${p.veh}/${p.a} ${fmt(q1[0], 3)} – ${fmt(q1[1], 3)} &nbsp;·&nbsp; ${p.veh}/${p.b} ${fmt(q2[0], 3)} – ${fmt(q2[1], 3)}<br/>
+     <span class="small muted">Bank quotes the cross directly:</span> ${p.b}/${p.a} ${fmt(dir[0], 4)} – ${fmt(dir[1], 4)}`;
+  document.getElementById("answerZone").style.display = "none";
+}
+
+function reveal() {
+  const { p, q1, q2, synBid, synAsk, dir } = cur;
+  const inv1 = [1 / q1[1], 1 / q1[0]], inv2 = [1 / q2[1], 1 / q2[0]];
+  const overlap = !(dir[0] > synAsk || dir[1] < synBid);
+  let verdict, story;
+  if (!overlap && dir[0] > synAsk) {
+    const prof = dir[0] - synAsk;
+    verdict = `<b class="bad">ARBITRAGE</b>`;
+    story = `Direct band sits entirely <b>above</b> the synthetic band. Buy ${p.a} synthetically at ${fmt(synAsk,4)} ${p.b}
+      (sell ${p.b} into ${p.veh} at the ${p.veh}/${p.b} bid ${fmt(q2[0],3)}, buy ${p.a} at the ${p.veh}/${p.a} ask ${fmt(q1[1],3)}),
+      sell ${p.a} to the bank at its bid ${fmt(dir[0],4)}. Riskless profit ≈ <b>${fmt(prof,4)} ${p.b} per ${p.a}</b>
+      (${fmt0(prof*1e6)} per million).`;
+  } else if (!overlap) {
+    const prof = synBid - dir[1];
+    verdict = `<b class="bad">ARBITRAGE</b>`;
+    story = `Direct band sits entirely <b>below</b> the synthetic band. Buy ${p.a} directly at the bank's ask ${fmt(dir[1],4)},
+      sell ${p.a} synthetically at ${fmt(synBid,4)} (sell ${p.a} for ${p.veh} at the bid ${fmt(q1[0],3)}, buy ${p.b} at the ask ${fmt(q2[1],3)}).
+      Riskless profit ≈ <b>${fmt(prof,4)} ${p.b} per ${p.a}</b> (${fmt0(prof*1e6)} per million).`;
+  } else {
+    verdict = `<b class="ok">shopping around</b>`;
+    const buyDirect = dir[1] < synAsk, sellDirect = dir[0] > synBid;
+    story = `The bands <b>overlap</b>: no riskless round trip. Least-cost dealing: buyers of ${p.a} compare asks
+      (${fmt(dir[1],4)} direct vs ${fmt(synAsk,4)} synthetic → go <b>${buyDirect ? "direct" : "synthetic"}</b>);
+      sellers compare bids (${fmt(dir[0],4)} vs ${fmt(synBid,4)} → go <b>${sellDirect ? "direct" : "synthetic"}</b>).
+      Writing this sentence, who goes where and why, is worth most of the marks.`;
+  }
+  document.getElementById("m-inv1").innerHTML = `<div class="small muted">${p.a}/${p.veh}</div><b>${fmt(inv1[0],5)} – ${fmt(inv1[1],5)}</b>`;
+  document.getElementById("m-inv2").innerHTML = `<div class="small muted">${p.b}/${p.veh}</div><b>${fmt(inv2[0],5)} – ${fmt(inv2[1],5)}</b>`;
+  document.getElementById("m-syn").innerHTML = `<div class="small muted">synthetic ${p.b}/${p.a}</div><b>${fmt(synBid,4)} – ${fmt(synAsk,4)}</b>`;
+  document.getElementById("m-verdict").innerHTML = `<div class="small muted">verdict</div>${verdict}`;
+  document.getElementById("story").innerHTML = story;
+  document.getElementById("story").style.display = "block";
+  document.getElementById("answerZone").style.display = "block";
+
+  if (chart) chart.destroy();
+  chart = new Chart(document.getElementById("bandChart"), {
+    type: "bar",
+    data: { labels: ["synthetic", "direct"], datasets: [{
+      label: "bid → ask", data: [[synBid, synAsk], [dir[0], dir[1]]],
+      backgroundColor: [BRAND + "99", "#275D8C99"], borderColor: [BRAND, "#275D8C"], borderWidth: 2, borderSkipped: false
+    }]},
+    options: Object.assign(baseChartOpts(`${p.b} per ${p.a}`, ""), {
+      indexAxis: "y",
+      plugins: { legend: { display: false } },
+      scales: { x: { min: Math.min(synBid, dir[0]) - (synAsk - synBid), max: Math.max(synAsk, dir[1]) + (synAsk - synBid), grid: { display: true } }, y: { grid: { display: false } } }
+    })
+  });
+}
+
+document.getElementById("newq").addEventListener("click", deal);
+document.getElementById("reveal").addEventListener("click", reveal);
+deal();
+</script>
+</main>
+</body>
+</html>

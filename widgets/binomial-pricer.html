@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Binomial option pricer — BST3553</title>
+<link rel="stylesheet" href="../assets/styles.css" />
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap">
+    <div style="flex:1 1 auto;">
+      <div class="code">BST3553 · interactive lab</div>
+      <h1>Binomial option pricer</h1>
+      <p class="sub">One tree, three roads: replication, hedging, risk-neutral. Exam question 3(b).</p>
+    </div>
+    <a class="crumb" href="../index.html">← back to lab</a>
+  </div>
+</header>
+
+<main class="wrap">
+  <p class="muted" style="margin-top:18px;">
+    Next period the exchange rate is either S<sub>0</sub>u or S<sub>0</sub>d, nothing else. In that tiny world a
+    currency option can be manufactured exactly from a forward plus a deposit, so its price is forced. The exam asks
+    for the calculation by <b>replication</b> and by <b>risk-neutral probability</b> every single year; this page runs
+    all three roads live and shows every intermediate number the mark scheme wants.
+  </p>
+
+  <div class="card">
+    <div style="display:flex;gap:8px;margin-bottom:10px;">
+      <button class="chip typ active" data-t="call">call on FC</button>
+      <button class="chip typ" data-t="put">put on FC</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-bottom:12px;">
+      <label class="small">S<sub>0</sub> (HC/FC) <span id="v-s"></span><input type="range" id="s" min="0.8" max="2.0" step="0.01" value="1.30"/></label>
+      <label class="small">up factor u <span id="v-u"></span><input type="range" id="u" min="1.02" max="1.40" step="0.01" value="1.10"/></label>
+      <label class="small">down factor d <span id="v-d"></span><input type="range" id="d" min="0.60" max="0.99" step="0.01" value="0.90"/></label>
+      <label class="small">r (HC), % per period <span id="v-r"></span><input type="range" id="r" min="0" max="10" step="0.25" value="2"/></label>
+      <label class="small">r* (FC), % per period <span id="v-rs"></span><input type="range" id="rs" min="0" max="10" step="0.25" value="1"/></label>
+      <label class="small">strike X <span id="v-x"></span><input type="range" id="x" min="0.8" max="2.0" step="0.01" value="1.30"/></label>
+    </div>
+
+    <div id="warn"></div>
+
+    <div style="display:grid;grid-template-columns:1fr 1.35fr;gap:14px;align-items:start;">
+      <div>
+        <div class="small muted" style="margin-bottom:4px;">The tree</div>
+        <div id="tree" style="line-height:1.8;font-size:0.98rem;"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;">
+          <div class="metric" id="m-f"></div>
+          <div class="metric" id="m-q"></div>
+          <div class="metric" id="m-b"></div>
+          <div class="metric" id="m-p"></div>
+        </div>
+      </div>
+      <div class="maths" style="display:block;" id="steps"></div>
+    </div>
+  </div>
+
+  <div class="why">
+    <h3>Why this matters — real examples</h3>
+    <p class="lead">The two-state trick from 1979 (Cox, Ross and Rubinstein) still prices most of the world's exotic derivatives, one small step at a time.</p>
+    <div class="exlist">
+      <div class="ex fin">
+        <p class="h"><span class="pill fin">Financial markets</span>Desks still use trees, not just formulas</p>
+        <p class="b">Closed-form prices exist only for plain European options. American features, barriers, and the knock-in/knock-out structures that hurt Korean exporters in 2008 are priced on lattices: exactly your tree, with thousands of steps and the same backward induction.</p>
+        <span class="k">→ The link: the B and q you just computed are recalculated at every node of those production lattices.</span>
+      </div>
+      <div class="ex macro">
+        <p class="h"><span class="pill macro">Macro</span>Risk-neutral probabilities are read at central banks</p>
+        <p class="b">The Bank of England routinely extracts option-implied (risk-adjusted) probability distributions for sterling around events like referendums and budgets. Those published fan-charts of the exchange rate are your q, scaled up from two states to a full distribution.</p>
+        <span class="k">→ The link: q moved when you dragged r or r*, but never when you changed your private view: that is the whole point.</span>
+      </div>
+      <div class="ex labour">
+        <p class="h"><span class="pill labour">Careers</span>The interview question that never dies</p>
+        <p class="b">"Price a one-period option; now explain why the real probability of up never appeared." Every derivatives graduate scheme asks some version. The three-roads-one-answer structure on this page is the model answer.</p>
+        <span class="k">→ The link: practise until you can reproduce the steps panel on paper in eight minutes: that is exam Q3(b)'s 15 marks.</span>
+      </div>
+    </div>
+  </div>
+
+  <h3>How to use it in class</h3>
+  <p class="small muted">Set the 2025-26 exam's numbers (S<sub>0</sub>=1.077, u=1.1, d=0.9, r=1%, r*=0.5%, X=1) and check the steps panel against the answer key: C<sub>0</sub> = 0.0960. Then break it: push d above F/S<sub>0</sub> and watch q leave (0,1), the model's own alarm bell.</p>
+
+<script src="../assets/fxlib.js"></script>
+<script>
+let typ = "call";
+document.querySelectorAll(".typ").forEach(b => b.addEventListener("click", e => {
+  document.querySelectorAll(".typ").forEach(x => x.classList.remove("active"));
+  e.target.classList.add("active"); typ = e.target.dataset.t; upd();
+}));
+
+function upd() {
+  const S0 = +document.getElementById("s").value, u = +document.getElementById("u").value, d = +document.getElementById("d").value;
+  const r = +document.getElementById("r").value / 100, rs = +document.getElementById("rs").value / 100, X = +document.getElementById("x").value;
+  ["s","u","d","r","rs","x"].forEach(id => {
+    const el = document.getElementById("v-" + id);
+    const v = +document.getElementById(id).value;
+    el.textContent = (id === "r" || id === "rs") ? v.toFixed(2) + "%" : fmt(v, 2);
+  });
+  const B1 = binom1(S0, u, d, r, rs, X, typ);
+  const ok = B1.q > 0 && B1.q < 1;
+  document.getElementById("warn").innerHTML = ok ? "" :
+    `<p class="badge bad" style="display:inline-block;">q = ${fmt(B1.q,3)} is outside (0,1): the forward ${fmt(B1.F,4)} lies outside [S<sub>0</sub>d, S<sub>0</sub>u], so this tree admits arbitrage before any option enters. Fix u, d or the rates.</p>`;
+
+  document.getElementById("tree").innerHTML =
+    `S<sub>0</sub> = <b>${fmt(S0,4)}</b> →
+     up: <b>${fmt(B1.Su,4)}</b> (payoff <b>${fmt(B1.Cu,4)}</b>) ·
+     down: <b>${fmt(B1.Sd,4)}</b> (payoff <b>${fmt(B1.Cd,4)}</b>)`;
+  document.getElementById("m-f").innerHTML = `<div class="small muted">forward F (CIP)</div><b>${fmt(B1.F,4)}</b>`;
+  document.getElementById("m-q").innerHTML = `<div class="small muted">risk-adjusted q</div><b>${fmt(B1.q,4)}</b>`;
+  document.getElementById("m-b").innerHTML = `<div class="small muted">exposure B<sub>0</sub></div><b>${fmt(B1.B,4)}</b>`;
+  document.getElementById("m-p").innerHTML = `<div class="small muted">${typ} price</div><b>${fmt(B1.price,4)}</b>`;
+
+  document.getElementById("steps").innerHTML = `
+    <b>Step 1 — CIP:</b> F = S<sub>0</sub>(1+r)/(1+r*) = ${fmt(S0,4)} × ${fmt(1+r,4)}/${fmt(1+rs,4)} = <b>${fmt(B1.F,4)}</b><br/>
+    <b>Step 2 — payoffs:</b> up ${fmt(B1.Cu,4)}, down ${fmt(B1.Cd,4)}<br/><br/>
+    <b>Road 1 — replication.</b> Exposure B<sub>0</sub> = (${fmt(B1.Cu,4)} − ${fmt(B1.Cd,4)})/(${fmt(B1.Su,4)} − ${fmt(B1.Sd,4)}) = <b>${fmt(B1.B,4)}</b>.
+    State equations B<sub>0</sub>(S<sub>1</sub> − F) + V<sub>1</sub> = payoff; the down state gives
+    V<sub>1</sub> = ${fmt(B1.Cd,4)} − ${fmt(B1.B,4)}×(${fmt(B1.Sd,4)} − ${fmt(B1.F,4)}) = <b>${fmt(B1.V1,4)}</b>.
+    Price = V<sub>1</sub>/(1+r) = <b>${fmt(B1.priceRepl,4)}</b>.<br/><br/>
+    <b>Road 2 — hedging.</b> Hold the ${typ}, take the opposite forward position of size B<sub>0</sub>: both states pay ${fmt(B1.V1,4)}, a synthetic T-bill; discount it: <b>${fmt(B1.priceRepl,4)}</b>.<br/><br/>
+    <b>Road 3 — risk-neutral.</b> q = (F − S<sub>0</sub>d)/(S<sub>0</sub>u − S<sub>0</sub>d) = (${fmt(B1.F,4)} − ${fmt(B1.Sd,4)})/(${fmt(B1.Su,4)} − ${fmt(B1.Sd,4)}) = <b>${fmt(B1.q,4)}</b>;
+    price = [q·${fmt(B1.Cu,4)} + (1−q)·${fmt(B1.Cd,4)}]/(1+r) = <b>${fmt(B1.price,4)}</b>.<br/><br/>
+    Three roads, one answer, because all three are the law of one price. Note what never appeared: the true probability of "up".`;
+}
+document.querySelectorAll("input").forEach(el => el.addEventListener("input", upd));
+upd();
+</script>
+</main>
+</body>
+</html>

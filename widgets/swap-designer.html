@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Swap designer — BST3553</title>
+<link rel="stylesheet" href="../assets/styles.css" />
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap">
+    <div style="flex:1 1 auto;">
+      <div class="code">BST3553 · interactive lab</div>
+      <h1>Swap designer</h1>
+      <p class="sub">Comparative advantage, a bank in the middle, and 14 marks. Exam question 5(a).</p>
+    </div>
+    <a class="crumb" href="../index.html">← back to lab</a>
+  </div>
+</header>
+
+<main class="wrap">
+  <p class="muted" style="margin-top:18px;">
+    Two firms, two markets, four rates. Firm A wants what market 2 sells; firm B wants what market 1 sells; each is
+    <i>relatively</i> better in the other market. Borrow where you're loved, swap into what you need, and split the
+    gain after the bank's cut. Enter any rate table below, <b>commit your own answer on paper</b>, then reveal.
+  </p>
+
+  <div class="card">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:12px;">
+      <label class="small">A: fixed market, % <input type="number" id="fixA" step="0.05" value="3.20" style="width:80px;"/></label>
+      <label class="small">B: fixed market, % <input type="number" id="fixB" step="0.05" value="4.40" style="width:80px;"/></label>
+      <label class="small">A: floating spread over SONIA, % <input type="number" id="fltA" step="0.05" value="0.30" style="width:80px;"/></label>
+      <label class="small">B: floating spread over SONIA, % <input type="number" id="fltB" step="0.05" value="0.70" style="width:80px;"/></label>
+      <label class="small">bank's margin, % p.a. <input type="number" id="bank" step="0.05" value="0.25" style="width:80px;"/></label>
+      <label class="small">A wants
+        <select id="wantA"><option value="flt" selected>floating</option><option value="fix">fixed</option></select>
+        (B wants the other)</label>
+    </div>
+    <button id="reveal">Reveal the design</button>
+
+    <div id="out" style="display:none;margin-top:12px;">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:10px;">
+        <div class="metric" id="m-spr"></div>
+        <div class="metric" id="m-gain"></div>
+        <div class="metric" id="m-landA"></div>
+        <div class="metric" id="m-landB"></div>
+      </div>
+      <div class="maths" style="display:block;" id="steps"></div>
+      <div style="overflow-x:auto;margin-top:10px;"><table class="results" id="verify"></table></div>
+    </div>
+  </div>
+
+  <div class="why">
+    <h3>Why this matters — real examples</h3>
+    <p class="lead">This four-line calculation built the largest market on earth: $548 trillion of interest-rate swaps outstanding at end-2024 (BIS).</p>
+    <div class="exlist">
+      <div class="ex fin">
+        <p class="h"><span class="pill fin">Financial markets</span>IBM and the World Bank, 1981</p>
+        <p class="b">IBM held Deutschmark and Swiss franc debt it wanted out of; the World Bank wanted more of exactly that and faced saturation premiums. Salomon Brothers had them service each other's bonds instead of refinancing: the first modern swap, and precisely the comparative-advantage table you just filled in.</p>
+        <span class="k">→ The link: your "total gain" cell is why the deal happened at all.</span>
+      </div>
+      <div class="ex macro">
+        <p class="h"><span class="pill macro">Monetary policy</span>The benchmark had to be replaced</p>
+        <p class="b">Every floating leg once reset on LIBOR, a survey rate that traders rigged; fines passed $9bn and the rate was executed in 2023. Its successors (SONIA, SOFR, EuroSTR) are computed from actual overnight transactions. When you typed "SONIA + 0.30", you used the reformed plumbing.</p>
+        <span class="k">→ The link: the floating spreads in your table ride on a benchmark that had to be rebuilt for honesty.</span>
+      </div>
+      <div class="ex labour">
+        <p class="h"><span class="pill labour">Careers</span>Treasury interviews love this table</p>
+        <p class="b">"Here are four rates and a bank margin: design the swap" appears in corporate-treasury and markets interviews because it tests arithmetic, direction sense and verification discipline in five minutes. The habit that impresses: checking every leg nets out, which the verify table does below.</p>
+        <span class="k">→ The link: exam Q5(a) gives 14 marks for exactly what the reveal shows, including the verification.</span>
+      </div>
+    </div>
+  </div>
+
+  <h3>How to use it in class</h3>
+  <p class="small muted">Type the 2025-26 exam's numbers (A: 3 / SONIA+0.5; B: 4.5 / SONIA+1.0; bank 0.25) and have everyone commit landing rates before revealing: A pays SONIA+0.125, B pays 4.125. Then break comparative advantage (make the spreads equal) and watch the gain vanish.</p>
+
+<script src="../assets/fxlib.js"></script>
+<script>
+document.getElementById("reveal").addEventListener("click", () => {
+  const fixA = +document.getElementById("fixA").value, fixB = +document.getElementById("fixB").value;
+  const fltA = +document.getElementById("fltA").value, fltB = +document.getElementById("fltB").value;
+  const bank = +document.getElementById("bank").value;
+  const wantAflt = document.getElementById("wantA").value === "flt";
+  const sFix = fixB - fixA, sFlt = fltB - fltA;
+  const gain = Math.abs(sFix - sFlt) - bank, each = gain / 2;
+
+  const out = document.getElementById("out"); out.style.display = "block";
+  document.getElementById("m-spr").innerHTML = `<div class="small muted">spreads (fixed / floating)</div><b>${sFix.toFixed(2)}% / ${sFlt.toFixed(2)}%</b>`;
+  document.getElementById("m-gain").innerHTML = `<div class="small muted">total gain after bank</div><b class="${gain>0?"ok":"bad"}">${gain.toFixed(2)}% (${each.toFixed(3)}% each)</b>`;
+
+  if (gain <= 0) {
+    document.getElementById("m-landA").innerHTML = `<div class="small muted">verdict</div><b class="bad">no swap</b>`;
+    document.getElementById("m-landB").innerHTML = `<div class="small muted">why</div><b>spread difference ≤ bank margin</b>`;
+    document.getElementById("steps").innerHTML = `The gain from comparative advantage is |${sFix.toFixed(2)} − ${sFlt.toFixed(2)}| − ${bank.toFixed(2)} = ${gain.toFixed(2)}% ≤ 0: with this bank margin there is nothing to share, so both firms should simply borrow directly in their target markets.`;
+    document.getElementById("verify").innerHTML = "";
+    return;
+  }
+  // A has comparative advantage where B's premium over A is LARGER
+  const aBorrowsFix = sFix > sFlt;
+  const landA = wantAflt ? `SONIA + ${(fltA - each).toFixed(3)}%` : `${(fixA - each).toFixed(3)}%`;
+  const landB = wantAflt ? `${(fixB - each).toFixed(3)}%` : `SONIA + ${(fltB - each).toFixed(3)}%`;
+  document.getElementById("m-landA").innerHTML = `<div class="small muted">A ends up paying</div><b>${landA}</b>`;
+  document.getElementById("m-landB").innerHTML = `<div class="small muted">B ends up paying</div><b>${landB}</b>`;
+
+  const borrowA = aBorrowsFix ? `fixed at ${fixA.toFixed(2)}%` : `floating at SONIA+${fltA.toFixed(2)}%`;
+  const borrowB = aBorrowsFix ? `floating at SONIA+${fltB.toFixed(2)}%` : `fixed at ${fixB.toFixed(2)}%`;
+  document.getElementById("steps").innerHTML = `
+    <b>1. Spreads:</b> fixed ${sFix.toFixed(2)}%, floating ${sFlt.toFixed(2)}%.<br/>
+    <b>2. Gain:</b> |difference| − bank = |${sFix.toFixed(2)} − ${sFlt.toFixed(2)}| − ${bank.toFixed(2)} = <b>${gain.toFixed(2)}%</b>, split <b>${each.toFixed(3)}%</b> each.<br/>
+    <b>3. Borrowing:</b> A borrows ${borrowA} (its comparative advantage); B borrows ${borrowB}; both swap through the bank.<br/>
+    <b>4. Landing rates:</b> each firm's target-market rate minus its share: A pays <b>${landA}</b>, B pays <b>${landB}</b>.`;
+
+  document.getElementById("verify").innerHTML = `
+    <tr><th>check</th><th>calculation</th><th>result</th></tr>
+    <tr><td>A saves</td><td>${wantAflt ? `(SONIA+${fltA.toFixed(2)}) − (${landA})` : `${fixA.toFixed(2)} − (${landA})`}</td><td class="ok">${each.toFixed(3)}% ✓</td></tr>
+    <tr><td>B saves</td><td>${wantAflt ? `${fixB.toFixed(2)} − ${landB}` : `(SONIA+${fltB.toFixed(2)}) − (${landB})`}</td><td class="ok">${each.toFixed(3)}% ✓</td></tr>
+    <tr><td>bank nets</td><td>gain − A's share − B's share = ${(gain + bank).toFixed(2)} − ${each.toFixed(3)} − ${each.toFixed(3)}</td><td class="ok">${bank.toFixed(2)}% ✓</td></tr>
+    <tr><td>legs cancel</td><td>each firm receives from the bank exactly what it pays its own lender</td><td class="ok">by construction ✓</td></tr>`;
+});
+</script>
+</main>
+</body>
+</html>

@@ -1,0 +1,176 @@
+/* BS3551 Interactive Lab — shared design tokens + components.
+   Light/dark aware. Edit the :root values to rebrand (e.g. swap --brand to a
+   different Cardiff palette). Tokens mirror the names used inside each widget. */
+
+:root {
+  --brand: #8A1538;            /* Cardiff "claret" — change to rebrand */
+  --brand-text: #ffffff;
+
+  --color-background-primary: #ffffff;
+  --color-background-secondary: #f4f3ee;
+  --color-background-tertiary: #faf9f5;
+  --color-background-info: #E6F1FB;
+  --color-background-success: #E1F5EE;
+  --color-background-danger: #FCEBEB;
+  --color-background-warning: #FAEEDA;
+
+  --color-text-primary: #1b1b19;
+  --color-text-secondary: #5F5E5A;
+  --color-text-tertiary: #8a8980;
+  --color-text-info: #0C447C;
+  --color-text-success: #0F6E56;
+  --color-text-danger: #A32D2D;
+
+  --color-border-tertiary: rgba(0,0,0,0.12);
+  --color-border-secondary: rgba(0,0,0,0.22);
+  --color-border-primary: rgba(0,0,0,0.32);
+  --color-border-info: #85B7EB;
+  --color-border-success: #5DCAA5;
+  --color-border-danger: #F09595;
+
+  --border-radius-md: 8px;
+  --border-radius-lg: 12px;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+  --maxw: 940px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --brand: #C04A6A;
+    --color-background-primary: #262624;
+    --color-background-secondary: #2f2f2c;
+    --color-background-tertiary: #1d1d1b;
+    --color-background-info: #10233a;
+    --color-background-success: #0e2b25;
+    --color-background-danger: #3a1717;
+    --color-background-warning: #332714;
+    --color-text-primary: #ECEAE3;
+    --color-text-secondary: #B4B2A9;
+    --color-text-tertiary: #888780;
+    --color-text-info: #85B7EB;
+    --color-text-success: #5DCAA5;
+    --color-text-danger: #F09595;
+    --color-border-tertiary: rgba(255,255,255,0.14);
+    --color-border-secondary: rgba(255,255,255,0.26);
+    --color-border-primary: rgba(255,255,255,0.36);
+  }
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  color: var(--color-text-primary);
+  background: var(--color-background-tertiary);
+  line-height: 1.6;
+}
+.wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 20px 64px; }
+
+/* Header */
+.site-header { background: var(--brand); color: var(--brand-text); }
+.site-header .wrap { padding-top: 18px; padding-bottom: 18px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.site-header .code { font-weight: 500; letter-spacing: .02em; opacity: .85; font-size: 13px; }
+.site-header h1 { font-size: 20px; font-weight: 500; margin: 2px 0 0; }
+.site-header .sub { font-size: 13px; opacity: .82; margin: 0; }
+.crumb { color: var(--brand-text); text-decoration: none; font-size: 13px; opacity: .9; }
+.crumb:hover { opacity: 1; text-decoration: underline; }
+
+a { color: var(--color-text-info); }
+
+h2 { font-size: 18px; font-weight: 500; margin: 2rem 0 .5rem; }
+h3 { font-size: 15px; font-weight: 500; margin: 1.4rem 0 .4rem; }
+p { margin: .5rem 0; }
+.muted { color: var(--color-text-secondary); }
+.small { font-size: 13px; }
+.tiny { font-size: 12px; color: var(--color-text-tertiary); }
+
+/* Cards */
+.card {
+  background: var(--color-background-primary);
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: var(--border-radius-lg);
+  padding: 18px 20px;
+  margin: 14px 0;
+}
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+
+/* Buttons / chips */
+button, .btn {
+  font-family: inherit; font-size: 13px; padding: 6px 11px;
+  border-radius: var(--border-radius-md);
+  border: 0.5px solid var(--color-border-secondary);
+  background: transparent; color: var(--color-text-primary);
+  cursor: pointer; transition: background .12s ease, transform .04s ease;
+}
+button:hover, .btn:hover { background: var(--color-background-secondary); }
+button:active { transform: scale(0.98); }
+.chip.active { background: var(--color-background-info); border-color: var(--color-border-info); color: var(--color-text-info); }
+
+/* Range inputs */
+input[type=range] { -webkit-appearance: none; appearance: none; height: 4px; border-radius: 2px;
+  background: var(--color-border-secondary); outline: none; }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px;
+  border-radius: 50%; background: var(--brand); cursor: pointer; border: 2px solid var(--color-background-primary); }
+input[type=range]::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%;
+  background: var(--brand); cursor: pointer; border: 2px solid var(--color-background-primary); }
+input[type=number] { font-family: inherit; font-size: 14px; padding: 6px 8px; width: 90px;
+  border-radius: var(--border-radius-md); border: 0.5px solid var(--color-border-secondary);
+  background: var(--color-background-primary); color: var(--color-text-primary); }
+
+/* Badges */
+.badge { font-size: 12px; padding: 3px 9px; border-radius: var(--border-radius-md); white-space: nowrap; }
+.badge.ok { background: var(--color-background-success); color: var(--color-text-success); }
+.badge.bad { background: var(--color-background-danger); color: var(--color-text-danger); }
+.badge.info { background: var(--color-background-info); color: var(--color-text-info); }
+
+/* Maths reveal panel */
+.maths { background: var(--color-background-secondary); border-radius: var(--border-radius-md);
+  padding: 12px 14px; font-size: 14px; }
+.maths code, .mono { font-family: var(--font-mono); font-size: 13px; }
+
+/* Tables */
+table.results { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.results th, table.results td { padding: 6px 8px; text-align: right; border-bottom: 0.5px solid var(--color-border-tertiary); }
+table.results th:first-child, table.results td:first-child { text-align: left; }
+table.results thead th { color: var(--color-text-secondary); font-weight: 500; }
+
+.tag { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 999px;
+  background: var(--color-background-secondary); color: var(--color-text-secondary); }
+.tag.live { background: var(--color-background-success); color: var(--color-text-success); }
+.tag.soon { background: var(--color-background-warning); color: #854F0B; }
+
+footer.site { border-top: 0.5px solid var(--color-border-tertiary); margin-top: 40px; padding-top: 16px;
+  font-size: 12px; color: var(--color-text-tertiary); }
+
+/* "Why it matters" real-world panel + interest-area pills (used on every widget) */
+:root {
+  --pill-fin-bg: rgba(138,21,56,0.10);  --pill-fin-fg: #7a1230;  --pill-fin-bd: #d99db0;
+  --pill-house-fg: #854F0B;             --pill-house-bd: #E0B060;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --pill-fin-bg: rgba(192,74,106,0.20); --pill-fin-fg: #EBA6BA; --pill-fin-bd: #7a3346;
+    --pill-house-fg: #E4B36A;             --pill-house-bd: #8a6a2e;
+  }
+}
+.why { background: var(--color-background-primary); border: 0.5px solid var(--color-border-tertiary);
+  border-radius: var(--border-radius-lg); padding: 18px 20px; margin: 14px 0; }
+.why > h3 { margin: 0 0 2px; font-size: 16px; }
+.why > .lead { color: var(--color-text-secondary); font-size: 13px; margin: 0 0 13px; }
+.exlist { display: grid; gap: 13px; }
+.ex { border-left: 3px solid var(--color-border-secondary); padding: 1px 0 1px 13px; }
+.ex.macro  { border-left-color: var(--color-border-info); }
+.ex.fin    { border-left-color: var(--pill-fin-bd); }
+.ex.labour { border-left-color: var(--color-border-success); }
+.ex.house  { border-left-color: var(--pill-house-bd); }
+.ex .h { font-weight: 500; font-size: 14px; margin: 0 0 3px; }
+.ex .b { color: var(--color-text-secondary); font-size: 13px; margin: 0; }
+.ex .k { display: block; color: var(--color-text-tertiary); font-size: 12.5px; margin-top: 5px; }
+.pill { display: inline-block; font-size: 11px; font-weight: 500; padding: 2px 8px;
+  border-radius: 999px; margin-right: 8px; vertical-align: 1px; white-space: nowrap; }
+.pill.macro  { background: var(--color-background-info);    color: var(--color-text-info); }
+.pill.fin    { background: var(--pill-fin-bg);              color: var(--pill-fin-fg); }
+.pill.labour { background: var(--color-background-success); color: var(--color-text-success); }
+.pill.house  { background: var(--color-background-warning); color: var(--pill-house-fg); }

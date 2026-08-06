@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Futures margin simulator — BST3553</title>
+<link rel="stylesheet" href="../assets/styles.css" />
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap">
+    <div style="flex:1 1 auto;">
+      <div class="code">BST3553 · interactive lab</div>
+      <h1>Futures margin simulator</h1>
+      <p class="sub">Marking to market with real prices: the mini-budget week, from inside the account. Exam question 3(a).</p>
+    </div>
+    <a class="crumb" href="../index.html">← back to lab</a>
+  </div>
+</header>
+
+<main class="wrap">
+  <p class="muted" style="margin-top:18px;">
+    On Thursday 22 September 2022 sterling settled at <b>1.1269</b>. The next morning the mini-budget hit; by Monday
+    Asia, cable printed its all-time low. These are the <b>actual daily closes</b> (FRED series DEXUSUK). Choose a
+    position and margins; the simulator runs the CME arithmetic: daily cash = Δf × 62,500 × contracts, margin call
+    whenever the account drops below maintenance (topped back to initial).
+  </p>
+
+  <div class="card">
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px;">
+      <button class="chip pos active" data-p="long">long GBP</button>
+      <button class="chip pos" data-p="short">short GBP</button>
+      <label class="small" style="margin-left:12px;">contracts (GBP 62,500 each) <input type="number" id="n" min="1" max="20" value="4" style="width:70px;"/></label>
+      <label class="small">initial margin $/contract <input type="number" id="im" min="500" max="10000" step="100" value="2800" style="width:90px;"/></label>
+      <label class="small">maintenance $/contract <input type="number" id="mm" min="400" max="9000" step="100" value="2500" style="width:90px;"/></label>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:10px;">
+      <div class="metric" id="m-net"></div>
+      <div class="metric" id="m-calls"></div>
+      <div class="metric" id="m-worst"></div>
+      <div class="metric" id="m-lesson"></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1.15fr 1fr;gap:14px;align-items:start;">
+      <div>
+        <div class="small muted" style="margin-bottom:2px;">Margin account balance (before top-ups), with maintenance and initial levels</div>
+        <div style="position:relative;height:230px;"><canvas id="chart"></canvas></div>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="results" id="tbl"></table>
+      </div>
+    </div>
+    <div class="maths" style="display:block;margin-top:10px;" id="note"></div>
+  </div>
+
+  <div class="why">
+    <h3>Why this matters — real examples</h3>
+    <p class="lead">Marking to market makes derivatives safe for strangers, by converting default risk into a daily cash-flow discipline that can itself become the crisis.</p>
+    <div class="exlist">
+      <div class="ex macro">
+        <p class="h"><span class="pill macro">Monetary policy</span>The LDI spiral, the very same week</p>
+        <p class="b">While your simulated account was getting its margin calls, UK pension funds were getting real ones on hedged gilt positions. Their forced gilt sales pushed yields higher, triggering more calls, until the Bank of England stepped in on 28 September 2022 to buy gilts "at whatever scale is necessary". Prudent collateral, demanded by everyone simultaneously, is a fire sale.</p>
+        <span class="k">→ The link: the top-ups in your margin-call column are what, aggregated across a pension system, forced a central bank intervention.</span>
+      </div>
+      <div class="ex fin">
+        <p class="h"><span class="pill fin">Financial markets</span>Being right eventually is not enough</p>
+        <p class="b">In the default long-GBP setup, sterling ends the week only about 1% below your entry, yet the account demands roughly $14,000 of fresh cash within two days. Fail Monday's call and you are liquidated at the bottom: right about the recovery, bankrupt anyway. This "ruin risk" is why hedgers with lumpy cash flows often prefer forwards.</p>
+        <span class="k">→ The link: flip to short GBP and see the same week from the winner's side: the cash arrives daily too.</span>
+      </div>
+      <div class="ex labour">
+        <p class="h"><span class="pill labour">Careers</span>The margin desk is a job</p>
+        <p class="b">Clearing houses (LCH, CME Clearing) employ risk teams whose whole day is setting the initial and maintenance levels you just typed: high enough to cover a bad day's move, low enough not to strangle trading. After 2022 they raised commodity margins sharply and got blamed for both too-late and too-much.</p>
+        <span class="k">→ The link: re-run the week with initial margin at $1,500 and at $5,000 and you have the desk's dilemma in two clicks.</span>
+      </div>
+    </div>
+  </div>
+
+  <h3>How to use it in class</h3>
+  <p class="small muted">Exam Q3(a) is this table with kinder numbers: daily cash flows (9 marks), total by telescoping (9 marks). Let students fill the table by hand first; the margin-call column is where the thinking is.</p>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="../assets/fxlib.js"></script>
+<script>
+let pos = "long", chart = null;
+document.querySelectorAll(".pos").forEach(b => b.addEventListener("click", e => {
+  document.querySelectorAll(".pos").forEach(x => x.classList.remove("active"));
+  e.target.classList.add("active"); pos = e.target.dataset.p; upd();
+}));
+
+function upd() {
+  const n = Math.max(1, +document.getElementById("n").value || 1);
+  const imC = +document.getElementById("im").value || 2800, mmC = +document.getElementById("mm").value || 2500;
+  const size = 62500, entry = MINIBUDGET.rates[0], settles = MINIBUDGET.rates.slice(1);
+  const res = mtmPath(settles, entry, size, n, imC * n, mmC * n, pos === "long");
+
+  let html = `<tr><th>date</th><th>settle</th><th>Δf</th><th>cash ($)</th><th>balance</th><th>call</th></tr>
+    <tr><td>${MINIBUDGET.label[0]}</td><td>${fmt(entry,4)}</td><td>—</td><td>—</td><td>${fmt0(imC*n)}</td><td>—</td></tr>`;
+  res.rows.forEach((r0, i) => {
+    html += `<tr><td>${MINIBUDGET.label[i+1]}</td><td>${fmt(r0.settle,4)}</td><td>${(r0.change>=0?"+":"")+fmt(r0.change,4)}</td>
+      <td>${money(r0.cash)}</td><td>${fmt0(r0.balBefore)}</td><td>${r0.call>0?"<b class='bad'>"+fmt0(r0.call)+"</b>":"—"}</td></tr>`;
+  });
+  document.getElementById("tbl").innerHTML = html;
+
+  const worst = Math.min(...res.rows.map(r0 => r0.balBefore));
+  document.getElementById("m-net").innerHTML = `<div class="small muted">net price P&amp;L over week</div><b class="${res.totalCash>=0?"ok":"bad"}">${money(res.totalCash)}</b>`;
+  document.getElementById("m-calls").innerHTML = `<div class="small muted">margin calls (cash you must find)</div><b class="${res.totalCalls>0?"bad":"ok"}">${fmt0(res.totalCalls)}</b>`;
+  document.getElementById("m-worst").innerHTML = `<div class="small muted">lowest balance touched</div><b>${fmt0(worst)}</b>`;
+  document.getElementById("m-lesson").innerHTML = `<div class="small muted">liquidated if you can't pay?</div><b>${res.totalCalls>0?"yes — at the worst prices":"no calls this run"}</b>`;
+  document.getElementById("note").innerHTML =
+    `Telescoping check: total cash = (last settle − entry) × 62,500 × ${n} ${pos === "long" ? "" : "× (−1)"} = <b>${money(res.totalCash)}</b>.
+     The interim path does not change the total, only who survives to collect it.`;
+
+  const labels = MINIBUDGET.label.slice(1);
+  if (chart) chart.destroy();
+  chart = new Chart(document.getElementById("chart"), {
+    type: "line",
+    data: { labels, datasets: [
+      { label: "balance before top-up", data: res.rows.map(r0 => r0.balBefore), borderColor: BRAND, backgroundColor: BRAND, pointRadius: 4, borderWidth: 2 },
+      { label: "maintenance", data: labels.map(()=>mmC*n), borderColor: "#B98A2C", pointRadius: 0, borderDash: [6,4], borderWidth: 1.5 },
+      { label: "initial", data: labels.map(()=>imC*n), borderColor: "#888", pointRadius: 0, borderDash: [2,3], borderWidth: 1.2 }
+    ]},
+    options: baseChartOpts("", "USD")
+  });
+}
+document.querySelectorAll("input").forEach(el => el.addEventListener("input", upd));
+upd();
+</script>
+</main>
+</body>
+</html>

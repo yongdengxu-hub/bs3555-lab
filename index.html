@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>BST3553 interactive lab — International Finance</title>
+<link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap">
+    <div style="flex:1 1 auto;">
+      <div class="code">Cardiff University · BST3553</div>
+      <h1>International Finance — interactive lab</h1>
+      <p class="sub">Trade the quotes, price the options, survive the margin calls. Built to go with the autumn lectures and tutorials.</p>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <p class="muted" style="margin-top:18px;">
+    These tools turn the numerical core of the module into something you can move with your hands: invert a
+    bid–ask quote and hunt the arbitrage, watch covered interest parity pin the forward rate, replay the real
+    September 2022 margin-call week, price options on a binomial tree and with Garman–Kohlhagen. Everything runs
+    in your browser, no login, nothing collected. Each tool maps to one exam question type.
+  </p>
+  <p class="muted" style="margin-top:2px;">
+    Every tool ends with a <b>"Why this matters"</b> panel: the real episode behind it, from the sterling flash
+    crash to the first IBM–World Bank swap, tied back to the exact control you just moved.
+  </p>
+
+  <h2>Interactive tools</h2>
+  <div class="grid">
+
+    <a class="card" href="widgets/fx-quote-trainer.html" style="text-decoration:none;color:inherit;">
+      <div style="display:flex;justify-content:space-between;align-items:start;gap:8px;">
+        <h3 style="margin:.1rem 0;">FX quote &amp; arbitrage trainer</h3><span class="tag live">live</span>
+      </div>
+      <p class="small muted" style="margin:.3rem 0 0;">Invert bid–ask quotes, build synthetic cross rates, and classify arbitrage vs shopping around on the band diagram. Random quiz mode. <span class="tiny">(Lecture 1 · exam Q1)</span></p>
+    </a>
+
+    <a class="card" href="widgets/cip-explorer.html" style="text-decoration:none;color:inherit;">
+      <div style="display:flex;justify-content:space-between;align-items:start;gap:8px;">
+        <h3 style="margin:.1rem 0;">Covered interest parity explorer</h3><span class="tag live">live</span>
+      </div>
+      <p class="small muted" style="margin:.3rem 0 0;">Move spot and the two interest rates; watch the forward follow. Misprice it and see the arbitrage cash flows leg by leg. <span class="tiny">(Lectures 2–3 · exam Q2)</span></p>
+    </a>
+
+    <a class="card" href="widgets/forward-hedge.html" style="text-decoration:none;color:inherit;">
+      <div style="display:flex;justify-content:space-between;align-items:start;gap:8px;">
+        <h3 style="margin:.1rem 0;">Forward hedging P&amp;L</h3><span class="tag live">live</span>
+      </div>
+      <p class="small muted" style="margin:.3rem 0 0;">An importer owes dollars in six months: compare doing nothing, the forward, and the option across every possible future spot rate. <span class="tiny">(Lectures 2 &amp; 5)</span></p>
+    </a>
+
+    <a class="card" href="widgets/margin-simulator.html" style="text-decoration:none;color:inherit;">
+      <div style="display:flex;justify-content:space-between;align-items:start;gap:8px;">
+        <h3 style="margin:.1rem 0;">Futures margin simulator</h3><span class="tag live">live</span>
+      </div>
+      <p class="small muted" style="margin:.3rem 0 0;">Replay the real mini-budget week (Sep 2022) from inside a futures account: marking to market, margin calls, and where you get liquidated. <span class="tiny">(Lecture 4 · exam Q3a)</span></p>
+    </a>
+
+    <a class="card" href="widgets/binomial-pricer.html" style="text-decoration:none;color:inherit;">
+      <div style="display:flex;justify-content:space-between;align-items:start;gap:8px;">
+        <h3 style="margin:.1rem 0;">Binomial option pricer</h3><span class="tag live">live</span>
+      </div>
+      <p class="small muted" style="margin:.3rem 0 0;">One tree, three roads: replication, hedging and risk-neutral probabilities, all live as you drag u, d, r, r* and X. <span class="tiny">(Lecture 6 · exam Q3b)</span></p>
+    </a>
+
+    <a class="card" href="widgets/option-payoffs.html" style="text-decoration:none;color:inherit;">
+      <div style="display:flex;justify-content:space-between;align-items:start;gap:8px;">
+        <h3 style="margin:.1rem 0;">Option payoff builder</h3><span class="tag live">live</span>
+      </div>
+      <p class="small muted" style="margin:.3rem 0 0;">Stack calls, puts and forwards; see payoff and profit lines update live. Presets for the straddle and the KIKO trap. <span class="tiny">(Lecture 5 · exam Q4)</span></p>
+    </a>
+
+    <a class="card" href="widgets/gk-pricer.html" style="text-decoration:none;color:inherit;">
+      <div style="display:flex;justify-content:space-between;align-items:start;gap:8px;">
+        <h3 style="margin:.1rem 0;">Garman–Kohlhagen pricer</h3><span class="tag live">live</span>
+      </div>
+      <p class="small muted" style="margin:.3rem 0 0;">The exam Q4 machine: d1, d2, N(d) table values, call and put prices, delta and the replication portfolio, live. <span class="tiny">(Lecture 7 · exam Q4)</span></p>
+    </a>
+
+    <a class="card" href="widgets/swap-designer.html" style="text-decoration:none;color:inherit;">
+      <div style="display:flex;justify-content:space-between;align-items:start;gap:8px;">
+        <h3 style="margin:.1rem 0;">Swap designer</h3><span class="tag live">live</span>
+      </div>
+      <p class="small muted" style="margin:.3rem 0 0;">Enter any two-firm rate table and a bank margin; design the swap, then check the landing rates and who saves what. <span class="tiny">(Lecture 8 · exam Q5)</span></p>
+    </a>
+
+  </div>
+
+  <h2 style="margin-top:26px;">Ask for help</h2>
+  <div class="grid">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:start;gap:8px;">
+        <h3 style="margin:.1rem 0;">BST3553 AI tutor</h3><span class="tag soon">coming soon</span>
+      </div>
+      <p class="small muted" style="margin:.3rem 0 0;">A grounded tutor built on the lecture notes and tutorials, in the style of the BS3551 tutor, will be linked here before teaching starts.</p>
+    </div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:start;gap:8px;">
+        <h3 style="margin:.1rem 0;">Past papers &amp; tutorials</h3><span class="tag live">Learning Central</span>
+      </div>
+      <p class="small muted" style="margin:.3rem 0 0;">Tutorial sheets, answer keys and past exam papers live on Learning Central. The exam-format question at the end of each tutorial is the best 30 minutes you can spend each week.</p>
+    </div>
+  </div>
+
+  <footer class="site">
+    <p>BST3553 International Finance · Cardiff Business School · Dr Yongdeng Xu.<br/>
+    All tools run entirely in your browser: no login, no data collected. Numbers marked "real" are from FRED/BIS as cited.</p>
+  </footer>
+</main>
+</body>
+</html>

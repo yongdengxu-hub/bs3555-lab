@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Garman–Kohlhagen pricer — BST3553</title>
+<link rel="stylesheet" href="../assets/styles.css" />
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap">
+    <div style="flex:1 1 auto;">
+      <div class="code">BST3553 · interactive lab</div>
+      <h1>Garman–Kohlhagen pricer</h1>
+      <p class="sub">The exam Q4 machine: Step 0 conversions, d₁, d₂, N(d), price, delta, replication. Lecture 7.</p>
+    </div>
+    <a class="crumb" href="../index.html">← back to lab</a>
+  </div>
+</header>
+
+<main class="wrap">
+  <p class="muted" style="margin-top:18px;">
+    Exam Q4 gives you six numbers and a normal table; the marks are for the <b>routine</b>: convert to effective
+    units, CIP for the forward, d₁ and d₂, table lookup, price, replicate, then put–call parity. This page runs the
+    routine live. <b>Exam mode</b> rounds d₁ and d₂ to two decimals before the lookup, exactly as you will in the hall.
+  </p>
+
+  <div class="card">
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px;">
+      <button class="chip mode active" data-m="exam">exam mode (2 d.p. lookup)</button>
+      <button class="chip mode" data-m="exact">exact N(d)</button>
+      <span class="small muted">presets:</span>
+      <button class="chip preset" data-s="1.08" data-x="1.04" data-sig="7" data-days="180" data-r="1" data-rs="0.5">2024-25 Q4 (GBP/EUR call)</button>
+      <button class="chip preset" data-s="18.6" data-x="20" data-sig="30" data-days="180" data-r="9" data-rs="4">2026 draft (MXN/USD put)</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:12px;">
+      <label class="small">spot S (HC/FC) <span id="v-s"></span><input type="range" id="s" min="0.5" max="25" step="0.01" value="1.08"/></label>
+      <label class="small">strike X <span id="v-x"></span><input type="range" id="x" min="0.5" max="25" step="0.01" value="1.04"/></label>
+      <label class="small">σ, % p.a. <span id="v-sig"></span><input type="range" id="sig" min="1" max="50" step="0.5" value="7"/></label>
+      <label class="small">days (360-yr) <span id="v-days"></span><input type="range" id="days" min="30" max="360" step="30" value="180"/></label>
+      <label class="small">r (HC), % p.a. <span id="v-r"></span><input type="range" id="r" min="0" max="12" step="0.25" value="1"/></label>
+      <label class="small">r* (FC), % p.a. <span id="v-rs"></span><input type="range" id="rs" min="0" max="12" step="0.25" value="0.5"/></label>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:10px;">
+      <div class="metric" id="m-step0"></div>
+      <div class="metric" id="m-f"></div>
+      <div class="metric" id="m-d"></div>
+      <div class="metric" id="m-n"></div>
+      <div class="metric" id="m-c"></div>
+      <div class="metric" id="m-p"></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1.2fr 1fr;gap:14px;align-items:start;">
+      <div>
+        <div class="small muted" style="margin-bottom:2px;">Call value vs spot (claret) with intrinsic-at-expiry (dashed); dot = you</div>
+        <div style="position:relative;height:220px;"><canvas id="chart"></canvas></div>
+      </div>
+      <div class="maths" style="display:block;" id="steps"></div>
+    </div>
+  </div>
+
+  <div class="why">
+    <h3>Why this matters — real examples</h3>
+    <p class="lead">Garman–Kohlhagen (1983) is Black–Scholes with two interest rates: still the quoting language of a market that trades about $700bn of FX options every day.</p>
+    <div class="exlist">
+      <div class="ex fin">
+        <p class="h"><span class="pill fin">Financial markets</span>Desks quote vol, not price</p>
+        <p class="b">Ask a dealer for a three-month euro call and the answer is "7.6": an implied volatility, which this formula converts to money. The smile (out-of-the-money puts commanding higher vols) is the market's confession that lognormality understates crashes, exactly what the CHF de-peg of January 2015 proved in forty minutes.</p>
+        <span class="k">→ The link: your σ slider is the number that desks actually negotiate.</span>
+      </div>
+      <div class="ex macro">
+        <p class="h"><span class="pill macro">Monetary policy</span>Risk reversals called Brexit early</p>
+        <p class="b">Days before the June 2016 vote, the premium of GBP puts over GBP calls (the risk reversal) hit record levels while the spot barely moved: the options market pricing referendum risk in advance. Central banks monitor these numbers as forward-looking risk sensors.</p>
+        <span class="k">→ The link: price the same option once with σ = 8 and once with σ = 20 and you have quantified fear.</span>
+      </div>
+      <div class="ex labour">
+        <p class="h"><span class="pill labour">Careers</span>N(d₁) is a job description</p>
+        <p class="b">An options desk's daily life is holding N(d₁)/(1+r*) of the underlying against every option written, rebalancing as it moves: delta hedging. The 1997 Nobel prize (Merton and Scholes) was for showing that this recipe, not a forecast, is what an option price is.</p>
+        <span class="k">→ The link: the replication table below the steps is the desk's shopping list, updated live as you drag.</span>
+      </div>
+    </div>
+  </div>
+
+  <h3>How to use it in class</h3>
+  <p class="small muted">Load the 2024-25 preset and follow the steps panel against the past paper: C = 0.0488, delta ≈ 0.80, P = 0.0063 by parity. The single most common lost mark is skipping Step 0: exam mode shows it first, every time.</p>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="../assets/fxlib.js"></script>
+<script>
+let mode = "exam", chart = null;
+document.querySelectorAll(".mode").forEach(b => b.addEventListener("click", e => {
+  document.querySelectorAll(".mode").forEach(x => x.classList.remove("active"));
+  e.target.classList.add("active"); mode = e.target.dataset.m; upd();
+}));
+document.querySelectorAll(".preset").forEach(b => b.addEventListener("click", e => {
+  const d = e.target.dataset;
+  document.getElementById("s").value = d.s; document.getElementById("x").value = d.x;
+  document.getElementById("sig").value = d.sig; document.getElementById("days").value = d.days;
+  document.getElementById("r").value = d.r; document.getElementById("rs").value = d.rs;
+  upd();
+}));
+
+function upd() {
+  const S = +document.getElementById("s").value, X = +document.getElementById("x").value;
+  const sig = +document.getElementById("sig").value / 100, days = +document.getElementById("days").value;
+  const rpa = +document.getElementById("r").value / 100, rspa = +document.getElementById("rs").value / 100;
+  const tau = days / 360, r = rpa * tau, rs = rspa * tau, sigEff = sig * Math.sqrt(tau);
+  document.getElementById("v-s").textContent = fmt(S,2); document.getElementById("v-x").textContent = fmt(X,2);
+  document.getElementById("v-sig").textContent = (sig*100).toFixed(1)+"%"; document.getElementById("v-days").textContent = days;
+  document.getElementById("v-r").textContent = (rpa*100).toFixed(2)+"%"; document.getElementById("v-rs").textContent = (rspa*100).toFixed(2)+"%";
+
+  const F = cipForward(S, r, rs);
+  let d1 = Math.log(F / X) / sigEff + sigEff / 2, d2 = d1 - sigEff;
+  let d1u = d1, d2u = d2;
+  if (mode === "exam") { d1u = Math.round(d1 * 100) / 100; d2u = Math.round(d2 * 100) / 100; }
+  const Nd1 = normCdf(d1u), Nd2 = normCdf(d2u);
+  const call = S / (1 + rs) * Nd1 - X / (1 + r) * Nd2;
+  const put = X / (1 + r) * (1 - Nd2) - S / (1 + rs) * (1 - Nd1);
+  const delta = Nd1 / (1 + rs);
+
+  document.getElementById("m-step0").innerHTML = `<div class="small muted">Step 0 (effective)</div><b>r=${(r*100).toFixed(3)}%, r*=${(rs*100).toFixed(3)}%, σ√τ=${fmt(sigEff,4)}</b>`;
+  document.getElementById("m-f").innerHTML = `<div class="small muted">forward F (CIP)</div><b>${fmt(F,4)}</b>`;
+  document.getElementById("m-d").innerHTML = `<div class="small muted">d₁ / d₂ ${mode==="exam"?"(rounded)":""}</div><b>${fmt(d1u,2)} / ${fmt(d2u,2)}</b>`;
+  document.getElementById("m-n").innerHTML = `<div class="small muted">N(d₁) / N(d₂)</div><b>${fmt(Nd1,4)} / ${fmt(Nd2,4)}</b>`;
+  document.getElementById("m-c").innerHTML = `<div class="small muted">call</div><b>${fmt(call,4)}</b>`;
+  document.getElementById("m-p").innerHTML = `<div class="small muted">put (parity)</div><b>${fmt(put,4)}</b>`;
+
+  document.getElementById("steps").innerHTML = `
+    <b>Step 0:</b> τ = ${days}/360 = ${fmt(tau,4)}; r = ${(rpa*100).toFixed(2)}%×τ = ${(r*100).toFixed(3)}%; r* = ${(rs*100).toFixed(3)}%; σ√τ = ${fmt(sigEff,4)}<br/>
+    <b>Step 1 (CIP):</b> F = ${fmt(S,4)}×${fmt(1+r,5)}/${fmt(1+rs,5)} = <b>${fmt(F,4)}</b><br/>
+    <b>Step 2:</b> d₁ = ln(F/X)/σ√τ + σ√τ/2 = ${fmt(d1,4)} ${mode==="exam"?`→ <b>${fmt(d1u,2)}</b>`:""}; d₂ = d₁ − σ√τ = ${fmt(d2,4)} ${mode==="exam"?`→ <b>${fmt(d2u,2)}</b>`:""}<br/>
+    <b>Step 3 (table):</b> N(d₁) = ${fmt(Nd1,4)}, N(d₂) = ${fmt(Nd2,4)} ${d1u<0||d2u<0?"(negative z: use N(−z) = 1 − N(z))":""}<br/>
+    <b>Step 4:</b> C = S/(1+r*)·N(d₁) − X/(1+r)·N(d₂) = ${fmt(S/(1+rs),4)}×${fmt(Nd1,4)} − ${fmt(X/(1+r),4)}×${fmt(Nd2,4)} = <b>${fmt(call,4)}</b><br/>
+    <b>Step 5 (parity):</b> P = C − S/(1+r*) + X/(1+r) = <b>${fmt(put,4)}</b><br/>
+    <b>Step 6 (replicate the call):</b> buy N(d₁) = ${fmt(Nd1,4)} FC T-bills (deposit FC ${fmt(Nd1/(1+rs),4)}); borrow HC ${fmt(X*Nd2/(1+r),4)}. Delta = N(d₁)/(1+r*) = <b>${fmt(delta,4)}</b>; rebalance as S and τ move.`;
+
+  const xs = [], vs = [], intr = [], dot = [];
+  const lo = X * 0.8, hi = X * 1.25;
+  for (let s0 = lo; s0 <= hi; s0 += (hi - lo) / 120) {
+    xs.push(fmt(s0, 2));
+    const gg = gk(s0, X, r, rs, sigEff);
+    vs.push(gg.call); intr.push(Math.max(s0 - X, 0));
+    dot.push(Math.abs(s0 - S) < (hi - lo) / 200 ? gk(S, X, r, rs, sigEff).call : null);
+  }
+  if (chart) chart.destroy();
+  chart = new Chart(document.getElementById("chart"), {
+    type: "line",
+    data: { labels: xs, datasets: [
+      { label: "GK call value", data: vs, borderColor: BRAND, pointRadius: 0, borderWidth: 2.5 },
+      { label: "intrinsic max(S−X,0)", data: intr, borderColor: "#888", borderDash: [6,4], pointRadius: 0, borderWidth: 1.5 },
+      { label: "you", data: dot, borderColor: "#B98A2C", backgroundColor: "#B98A2C", pointRadius: 5, showLine: false }
+    ]},
+    options: baseChartOpts("spot S", "call value (HC per FC)")
+  });
+}
+document.querySelectorAll("input").forEach(el => el.addEventListener("input", upd));
+upd();
+</script>
+</main>
+</body>
+</html>

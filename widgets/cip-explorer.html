@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CIP explorer — BST3553</title>
+<link rel="stylesheet" href="../assets/styles.css" />
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap">
+    <div style="flex:1 1 auto;">
+      <div class="code">BST3553 · interactive lab</div>
+      <h1>Covered interest parity explorer</h1>
+      <p class="sub">The forward rate is not a forecast: it is arithmetic. Exam question 2.</p>
+    </div>
+    <a class="crumb" href="../index.html">← back to lab</a>
+  </div>
+</header>
+
+<main class="wrap">
+  <p class="muted" style="margin-top:18px;">
+    Two riskless routes take home currency today into foreign currency at time T: swap now and deposit abroad, or
+    deposit at home and sell forward. If both are riskless they must tie, which pins the forward:
+    <b>F = S (1+r)/(1+r*)</b>. Drag anything below; the forward follows. Then misquote the forward and watch the
+    arbitrage machine print money, leg by leg.
+  </p>
+
+  <div class="card">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:12px;">
+      <label class="small">spot S (HC/FC) <span id="v-s"></span><input type="range" id="s" min="0.90" max="1.60" step="0.005" value="1.25"/></label>
+      <label class="small">home rate r, % p.a. <span id="v-r"></span><input type="range" id="r" min="0" max="10" step="0.1" value="4.0"/></label>
+      <label class="small">foreign rate r*, % p.a. <span id="v-rs"></span><input type="range" id="rs" min="0" max="10" step="0.1" value="2.0"/></label>
+      <label class="small">maturity, months <span id="v-m"></span><input type="range" id="m" min="1" max="12" step="1" value="6"/></label>
+      <label class="small">quoted forward vs CIP, pips <span id="v-dev"></span><input type="range" id="dev" min="-300" max="300" step="10" value="0"/></label>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:10px;">
+      <div class="metric" id="m-eff"></div>
+      <div class="metric" id="m-f"></div>
+      <div class="metric" id="m-q"></div>
+      <div class="metric" id="m-prof"></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+      <div>
+        <div class="small muted" style="margin-bottom:2px;">Forward premium vs interest differential (CIP line; dot = you)</div>
+        <div style="position:relative;height:190px;"><canvas id="cipChart"></canvas></div>
+      </div>
+      <div>
+        <div class="small muted" style="margin-bottom:2px;">The arbitrage, leg by leg (per HC 1,000,000)</div>
+        <div id="legs" class="maths" style="display:block;min-height:170px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="why">
+    <h3>Why this matters — real examples</h3>
+    <p class="lead">CIP is the most-used equation on any FX desk, and its post-2008 failure is one of the biggest puzzles in international finance.</p>
+    <div class="exlist">
+      <div class="ex fin">
+        <p class="h"><span class="pill fin">Financial markets</span>The basis: the arbitrage nobody closes</p>
+        <p class="b">Since 2008, borrowing dollars via the FX swap market has cost 20–70bp more per year than borrowing them directly (against JPY), for seventeen years. Banks cannot arbitrage it away because the trade eats balance sheet that Basel III charges for. Du, Tepper and Verdelhan (Journal of Finance, 2018) is the canonical paper.</p>
+        <span class="k">→ The link: set the deviation slider to −40 pips and imagine a regulator charging you rent on the position: that is the modern FX swap market.</span>
+      </div>
+      <div class="ex macro">
+        <p class="h"><span class="pill macro">Monetary policy</span>March 2020: the Fed as arbitrageur of last resort</p>
+        <p class="b">In the covid dash-for-dollars the deviation you are simulating blew out to about −140bp; the Fed lent up to $449bn to other central banks through swap lines so their banks could get dollars. The parity was restored by policy, not by textbook arbitrageurs.</p>
+        <span class="k">→ The link: your "riskless profit" table is exactly the trade the Fed's swap lines replaced.</span>
+      </div>
+      <div class="ex house">
+        <p class="h"><span class="pill house">Your money</span>Why high-rate currencies aren't a free lunch forward</p>
+        <p class="b">A one-year NZD deposit may pay 3% more than GBP, but the forward rate prices the kiwi at a matching discount: hedged, you earn the GBP rate. Every "guaranteed FX yield pickup" pitch you will ever hear dies on this widget.</p>
+        <span class="k">→ The link: raise r* and watch F fall by exactly the amount that kills the pickup.</span>
+      </div>
+    </div>
+  </div>
+
+  <h3>How to use it in class</h3>
+  <p class="small muted">Set the 2024-25 exam numbers (S = 0.25 scaled, r = 2.7%, r* = 2.6%, quoted forward far off CIP) and let students race to state the arbitrage direction before the legs table reveals it.</p>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="../assets/fxlib.js"></script>
+<script>
+let chart = null;
+function upd() {
+  const S = +document.getElementById("s").value;
+  const rpa = +document.getElementById("r").value, rspa = +document.getElementById("rs").value;
+  const m = +document.getElementById("m").value, dev = +document.getElementById("dev").value;
+  const tau = m / 12, r = rpa / 100 * tau, rs = rspa / 100 * tau;
+  const F = cipForward(S, r, rs), Fq = F + dev / 10000;
+  document.getElementById("v-s").textContent = fmt(S, 3);
+  document.getElementById("v-r").textContent = rpa.toFixed(1) + "%";
+  document.getElementById("v-rs").textContent = rspa.toFixed(1) + "%";
+  document.getElementById("v-m").textContent = m;
+  document.getElementById("v-dev").textContent = dev;
+  document.getElementById("m-eff").innerHTML = `<div class="small muted">effective returns</div><b>r = ${(r*100).toFixed(3)}%, r* = ${(rs*100).toFixed(3)}%</b>`;
+  document.getElementById("m-f").innerHTML = `<div class="small muted">CIP forward F</div><b>${fmt(F, 4)}</b>`;
+  document.getElementById("m-q").innerHTML = `<div class="small muted">quoted forward</div><b>${fmt(Fq, 4)}</b>`;
+
+  let legs, prof;
+  const N = 1e6;
+  if (Math.abs(dev) < 1) {
+    prof = 0;
+    legs = `<b>CIP holds.</b> Both routes from HC<sub>t</sub> to FC<sub>T</sub> deliver the same amount; there is nothing to arbitrage.
+      Route A: deposit at home ×(1+r), sell forward. Route B: convert spot, deposit abroad ×(1+r*).
+      That indifference <i>is</i> the CIP equation.`;
+  } else if (Fq > F) {
+    // quoted forward too HIGH: FC overpriced forward → sell FC forward synthetically? Arbitrage: borrow HC? Classic: buy FC spot, deposit, sell forward at Fq; fund by HC loan.
+    const fc0 = N / S, fcT = fc0 * (1 + rs), hcT = fcT * Fq, owe = N * (1 + r);
+    prof = hcT - owe;
+    legs = `<b>Quoted F too high → the covered FC deposit beats the HC deposit.</b><br/>
+      1. Borrow HC ${fmt0(N)} (owe ${fmt0(owe)} at T).<br/>
+      2. Convert spot at ${fmt(S,4)} → FC ${fmt0(fc0)}.<br/>
+      3. Deposit at r* → FC ${fmt0(fcT)} at T.<br/>
+      4. Sell FC forward at ${fmt(Fq,4)} → HC ${fmt0(hcT)}.<br/>
+      <b>Riskless profit at T = ${money(prof)}</b> per million borrowed. Selling pressure pushes the forward back to ${fmt(F,4)}.`;
+  } else {
+    // quoted F too LOW: reverse
+    const fcBorrow = N / S, oweFC = fcBorrow * (1 + rs), hcT = N * (1 + r), costHC = oweFC * Fq;
+    prof = hcT - costHC;
+    legs = `<b>Quoted F too low → borrow abroad, invest at home, buy FC forward.</b><br/>
+      1. Borrow FC ${fmt0(fcBorrow)} (owe ${fmt0(oweFC)} at T).<br/>
+      2. Sell spot at ${fmt(S,4)} → HC ${fmt0(N)}.<br/>
+      3. Deposit at r → HC ${fmt0(hcT)} at T.<br/>
+      4. Buy FC forward at ${fmt(Fq,4)} to repay: costs HC ${fmt0(costHC)}.<br/>
+      <b>Riskless profit at T = ${money(prof)}</b> per million. Buying pressure pushes the forward up to ${fmt(F,4)}.`;
+  }
+  document.getElementById("m-prof").innerHTML = `<div class="small muted">arbitrage profit / HC 1m</div><b class="${prof>0?"bad":"ok"}">${money(prof)}</b>`;
+  document.getElementById("legs").innerHTML = legs;
+
+  const diffs = [], fs = [];
+  for (let dd = -6; dd <= 6; dd += 0.25) { diffs.push(dd); fs.push(S * (1 + (rpa + dd) / 100 * tau) / (1 + rpa / 100 * tau)); }
+  if (chart) chart.destroy();
+  chart = new Chart(document.getElementById("cipChart"), {
+    type: "line",
+    data: { labels: diffs.map(d => d.toFixed(1)), datasets: [
+      { label: "CIP forward", data: fs, borderColor: BRAND, pointRadius: 0, borderWidth: 2 },
+      { label: "you", data: diffs.map(d => Math.abs(d - (rpa - rspa)) < 0.13 ? Fq : null), borderColor: "#275D8C", backgroundColor: "#275D8C", pointRadius: 6, showLine: false }
+    ]},
+    options: baseChartOpts("interest differential r − r* (% p.a.)", "forward rate")
+  });
+}
+document.querySelectorAll("input").forEach(el => el.addEventListener("input", upd));
+upd();
+</script>
+</main>
+</body>
+</html>
