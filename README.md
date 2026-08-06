@@ -1,12 +1,12 @@
-# BST3553 interactive lab
+# BS3555 interactive lab
 
-Static, no-login browser widgets for BST3553 International Finance (Cardiff Business School,
+Static, no-login browser widgets for BS3555 International Finance (Cardiff Business School,
 autumn semester): FX quotes and arbitrage, covered interest parity, forward hedging, futures
 margining (the real September 2022 mini-budget week), binomial and Garman-Kohlhagen option
 pricing, and swap design. Each tool maps to one exam question type and ends with a
 "Why this matters" panel of real episodes.
 
-- Live site: https://yongdengxu-hub.github.io/bst3553-lab/
+- Live site: https://yongdengxu-hub.github.io/bs3555-lab/
 - Sibling project: https://yongdengxu-hub.github.io/bs3551-lab/ (Econometrics)
 
 ## Structure

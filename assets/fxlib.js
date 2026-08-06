@@ -1,4 +1,4 @@
-/* fxlib.js — all FX/derivatives maths for the BST3553 lab, from first principles.
+/* fxlib.js — all FX/derivatives maths for the BS3555 lab, from first principles.
    No dependencies. Everything runs client-side; nothing is collected. */
 
 // ---------- basics ----------
