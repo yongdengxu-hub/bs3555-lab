@@ -11,9 +11,14 @@
   .posrow td { font-size:13px; }
   .warn { background:#FBF0E4; border-left:3px solid #B98A2C; padding:8px 10px; border-radius:4px; font-size:13px; }
   .bust { background:#FBE9EA; border-left:3px solid #B2182B; padding:8px 10px; border-radius:4px; font-size:13px; }
-  .mand { background:#EDF3F8; border-left:3px solid #275D8C; padding:8px 10px; border-radius:4px; font-size:13px; }
+  .mand { background:#EDF3F8; border-left:3px solid #275D8C; padding:9px 11px; border-radius:4px; font-size:13px; }
   .kpi { text-align:center; }
-  .kpi b { display:block; font-size:1.12rem; }
+  .kpi b { display:block; font-size:1.1rem; }
+  .rstrip { display:flex; gap:6px; flex-wrap:wrap; margin:10px 0; }
+  .rchip { flex:1 1 140px; border:1px solid #e0e0e0; border-radius:6px; padding:6px 8px; font-size:12px; background:#fafafa; }
+  .rchip.now { border-color:#8A1538; background:#F7EDF0; font-weight:600; }
+  .rchip.done { background:#F2F7F2; }
+  .rchip small { display:block; color:var(--muted); font-weight:400; }
 </style>
 </head>
 <body>
@@ -22,7 +27,7 @@
     <div style="flex:1 1 auto;">
       <div class="code">BS3555 · interactive lab</div>
       <h1>FX trading simulator</h1>
-      <p class="sub">Real prices. Spot, forwards, futures and options — priced by the formulas from the lectures.</p>
+      <p class="sub">Four monthly mandates. Real prices. Spot, forwards, futures and options priced by the lecture formulas.</p>
     </div>
     <a class="crumb" href="../index.html">← back to lab</a>
   </div>
@@ -30,39 +35,40 @@
 
 <main class="wrap">
   <p class="muted" style="margin-top:18px;">
-    Two ways to play. In <b>treasury mandate</b> you are the treasurer of a UK firm that owes dollars in three
-    months: your job is to make the cost <i>certain</i>, not to make a profit. In <b>speculation</b> you have
-    £1,000 and no obligations. Every price is real: spot from FRED, rates from SONIA / SOFR / EuroSTR, forwards
-    by <b>covered interest parity</b>, options by <b>Garman–Kohlhagen</b> with realised volatility. There is a
-    bid–ask spread on everything.
+    In <b>treasury mandate</b> mode you run four monthly rounds. Each round gives you fresh working capital and a
+    new obligation: sometimes you <b>owe</b> a currency, sometimes you will <b>receive</b> one, in dollars or euros.
+    Your job every month is the same, and it is not to make a profit: make the outcome <b>certain</b>. Each round is
+    scored on its own and your term score is the <b>average</b>, so one lucky month cannot carry you.
   </p>
   <p class="muted" style="margin-top:2px;">
-    This is <b>practice mode</b>: history replays instantly, so you get a semester of feedback in ten minutes.
+    Prices are real (ECB/FRED). Forwards come from <b>covered interest parity</b>, options from
+    <b>Garman–Kohlhagen</b> with realised volatility. This mirrors the graded Google Sheets version exactly.
   </p>
 
   <div class="card">
-    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px;">
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px;">
       <label class="small">mode
         <select id="mode">
-          <option value="mandate" selected>Treasury mandate — hedge a USD payable</option>
+          <option value="mandate" selected>Treasury mandate — 4 monthly rounds</option>
           <option value="spec">Speculation — £1,000, no obligations</option>
         </select>
       </label>
-      <label class="small">scenario
+      <label class="small">start
         <select id="scen">
           <option value="minibudget">Sep 2022 — the mini-budget</option>
-          <option value="hiking">2022–23 — rate hiking cycle</option>
-          <option value="recent" selected>2025–26 — recent markets</option>
-          <option value="full">2021–2026 — everything</option>
+          <option value="hiking">Jan 2022 — rate hiking cycle</option>
+          <option value="recent" selected>Jan 2025 — recent markets</option>
+          <option value="covid">Jan 2021 — post-covid</option>
         </select>
       </label>
-      <button id="step1">▶ next day</button>
-      <button id="step5">▶▶ next week</button>
-      <button id="step21">▶▶▶ next month</button>
+      <button id="step1">▶ day</button>
+      <button id="step5">▶▶ week</button>
+      <button id="stepR">▶▶▶ finish round</button>
       <button id="reset" style="font-size:12px;padding:4px 9px;">↻ reset</button>
     </div>
-    <div class="small muted" id="datelab" style="margin-bottom:10px;"></div>
+    <div class="small muted" id="datelab" style="margin-bottom:8px;"></div>
 
+    <div class="rstrip" id="rstrip"></div>
     <div id="mandateBox"></div>
 
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(105px,1fr));gap:10px;margin:12px 0;">
@@ -93,15 +99,14 @@
             <select id="t-dir"><option value="1">buy / long</option><option value="-1">sell / short</option></select></div>
           <div><label>size (FC units)</label>
             <input type="number" id="t-qty" value="1000" step="100" min="0"/></div>
-          <div id="wrap-ten"><label>maturity</label>
-            <select id="t-ten"><option value="21">1 month</option><option value="63" selected>3 months</option><option value="126">6 months</option></select></div>
           <div id="wrap-strike"><label>strike (GBP per FC)</label>
             <input type="number" id="t-strike" step="0.005"/></div>
+          <div><label>&nbsp;</label><button id="hedgeMe" style="width:100%;font-size:12px;">auto-fill full hedge</button></div>
         </div>
         <div class="maths" style="display:block;margin-top:8px;font-size:12.5px;" id="quote"></div>
         <button id="doTrade" style="width:100%;margin-top:8px;">Place trade</button>
         <div class="small muted" style="margin-top:6px;">
-          Costs: spot 0.02%, forward 0.05%, future 0.03%, options 2% of premium.
+          Derivatives mature at the round end. Costs: spot 0.02%, fwd 0.05%, fut 0.03%, options 2% of premium.
         </div>
       </div>
 
@@ -115,20 +120,26 @@
 
     <div style="margin-top:16px;">
       <div class="small muted" style="margin-bottom:2px;" id="chartlab"></div>
-      <div style="position:relative;height:210px;"><canvas id="eqChart"></canvas></div>
+      <div style="position:relative;height:200px;"><canvas id="eqChart"></canvas></div>
     </div>
 
     <div style="margin-top:14px;">
-      <div class="small muted" style="margin-bottom:6px;"><b>Performance report</b> — the numbers your lecturer marks</div>
+      <div class="small muted" style="margin-bottom:6px;"><b>This round</b></div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:10px;">
         <div class="metric kpi" id="m-ret"></div>
         <div class="metric kpi" id="m-vol"></div>
-        <div class="metric kpi" id="m-sharpe"></div>
         <div class="metric kpi" id="m-dd"></div>
         <div class="metric kpi" id="m-worst"></div>
         <div class="metric kpi" id="m-he"></div>
         <div class="metric kpi" id="m-trades"></div>
       </div>
+      <div class="small muted" style="margin:12px 0 6px;"><b>Term score</b> — what the leaderboard ranks on</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;">
+        <div class="metric kpi" id="t-avg"></div>
+        <div class="metric kpi" id="t-worst"></div>
+        <div class="metric kpi" id="t-done"></div>
+      </div>
+      <table class="results" id="rtable" style="margin-top:10px;"></table>
     </div>
   </div>
 
@@ -138,413 +149,546 @@
     <div class="exlist">
       <div class="ex house">
         <p class="h"><span class="pill house">Your money</span>The treasurer's job is boring on purpose</p>
-        <p class="b">In mandate mode a full forward hedge makes your net worth almost a flat line: hedge effectiveness near 100%, volatility near zero, and you will never top the return leaderboard. That is the correct answer. Unilever's treasury does not try to win at FX; it tries to make next year's costs knowable, which is exactly what Marmitegate was about when the hedges rolled off.</p>
-        <span class="k">→ The link: hedge fully, then look at your volatility column rather than your return column.</span>
+        <p class="b">Hedge each mandate fully with a forward and your net worth is almost a flat line: 100% hedge effectiveness, near-zero volatility, and you will never top a returns table. That is the correct answer. Unilever's treasury does not try to win at FX; it tries to make next year's costs knowable, which is exactly what Marmitegate was about when the hedges rolled off.</p>
+        <span class="k">→ The link: press "auto-fill full hedge" every round, then read your volatility column instead of your return column.</span>
+      </div>
+      <div class="ex fin">
+        <p class="h"><span class="pill fin">Financial markets</span>A receivable hedges the other way round</p>
+        <p class="b">Rounds alternate. When you <i>owe</i> dollars you are short dollars, so you buy them forward. When you will <i>receive</i> euros you are long euros, so you sell them forward. Get the direction wrong and you double your risk instead of removing it — the simulator will usually block it for breaching the exposure limit, which is itself the lesson.</p>
+        <span class="k">→ The link: try hedging a receivable by buying forward and watch what happens to net exposure.</span>
       </div>
       <div class="ex macro">
         <p class="h"><span class="pill macro">Monetary policy</span>Two days in September 2022</p>
-        <p class="b">Load the mini-budget scenario, step to 22 September, and go long sterling with futures at the full 5× limit. Over the next two trading days your equity falls about 26%, because sterling fell from 1.127 to 1.070 against the dollar. You keep your position only because the leverage cap is there; with the leverage the LDI pension funds were running, this is the week they got margin calls they could not meet. Realised volatility in the data jumps from 9% to 15%, so every option you buy afterwards is suddenly far dearer.</p>
-        <span class="k">→ The link: the leverage limit is not bureaucracy. It is the only reason you are still in the game on 27 September.</span>
-      </div>
-      <div class="ex fin">
-        <p class="h"><span class="pill fin">Financial markets</span>The carry trade, discovered by accident</p>
-        <p class="b">Buy dollars spot and your dollar balance earns SOFR while your pound balance stops earning SONIA. That gap is the carry trade, and it is why the forward sits at a discount: covered interest parity takes the carry back. Hold a spot position for a month and you see both effects in your P&L, separately.</p>
-        <span class="k">→ The link: run 2022–23 long USD and watch interest, not just the exchange rate, move your NAV.</span>
+        <p class="b">Start on the mini-budget and take a leveraged futures position at the 5× limit. Over two trading days your equity falls about a quarter, because sterling fell from 1.127 to 1.070 against the dollar. You keep the position only because the leverage cap exists; with the leverage the LDI pension funds were running, this is the week they got margin calls they could not meet.</p>
+        <span class="k">→ The link: the limit is not bureaucracy. It is why you are still solvent on 27 September.</span>
       </div>
     </div>
   </div>
 
   <h3>How to use it in class</h3>
-  <p class="small muted">Put everyone in mandate mode on the same scenario and compare three groups: forward hedgers, option hedgers, and the unhedged. Then rank them by <em>hedge effectiveness</em> instead of return. The forward group wins on certainty, the option group pays a premium for keeping upside, and the unhedged group learns why treasurers do not gamble with the payables account.</p>
+  <p class="small muted">Run everyone on the same start date and compare three groups after four rounds: forward hedgers, option hedgers, and the unhedged. Rank them by <em>average hedge effectiveness</em>, not return. The forward group wins on certainty every month; the option group pays a premium to keep upside; the unhedged group often posts the best profit and the worst risk, which is precisely the conversation you want.</p>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script src="../assets/fxlib.js"></script>
 <script>
 // ---------------------------------------------------------------- config
-const START_CAP = 1000;                                   // GBP working capital
-const LIAB = { qty: 1000, ccy: "usd", tenor: 63 };        // USD 1,000 due in 3 months
+// Mirrors 00_Config.gs / 03_Engine.gs in the Apps Script version.
+const ROUND_DAYS = 21, N_ROUNDS = 4;
 const COST = { spot: 0.0002, fwd: 0.0005, fut: 0.0003, opt: 0.02 };
 const MARGIN = { fut: 0.05, shortOpt: 0.15 };
 const MAX_LEVERAGE = 5;
-const SCEN = {
-  minibudget: ["2022-09-01", "2022-12-31"],
-  hiking:     ["2022-01-03", "2023-12-29"],
-  recent:     ["2025-01-02", "2026-07-31"],
-  full:       ["2021-01-04", "2026-07-31"]
-};
+const SPEC_CAPITAL = 1000;
+const PATTERN = [
+  { ccy: 'usd', qty:  1000 },
+  { ccy: 'eur', qty: -1000 },
+  { ccy: 'usd', qty:  1500 },
+  { ccy: 'eur', qty: -1500 }
+];
+const START = { minibudget: '2022-09-01', hiking: '2022-01-03', recent: '2025-01-02', covid: '2021-01-04' };
 
-let DATA = null, rows = [], i = 0, book = [], cash = 0, fc = { usd: 0, eur: 0 };
-let navHist = [], benchHist = [], unhedgedHist = [], dateHist = [];
-let nTrades = 0, bust = false, uid = 1, chart = null, liqMsg = "", flashMsg = "";
-let mode = "mandate", liabMatIdx = 0, liabOpen = true, liabSettledCost = null;
+let DATA = null, rows = [], i = 0;
+let mode = 'mandate', rounds = [], cur = 0, roundResults = [];
+let cash = 0, fc = { usd: 0, eur: 0 }, book = [], uid = 1;
+let liab = null;                 // {ccy, qty(signed), matIdx, open, cost}
+let navHist = [], dateHist = [], benchHist = [];
+let nTrades = 0, roundTrades = 0, bust = false, chart = null, liqMsg = '', flashMsg = '';
 
 const row = () => rows[i];
 const tau = n => n / 252;
-const isMandate = () => mode === "mandate";
+const isMandate = () => mode === 'mandate';
+const rd = () => rounds[cur];
 
 // ---------------------------------------------------------------- pricing
 function priceForward(ccy, tenor) {
   const r = row();
-  return cipForward(r[ccy], r.rg * tau(tenor), (ccy === "usd" ? r.ru : r.re) * tau(tenor));
+  return cipForward(r[ccy], r.rg * tau(Math.max(tenor, 1)), (ccy === 'usd' ? r.ru : r.re) * tau(Math.max(tenor, 1)));
 }
 function priceOption(ccy, kind, strike, tenorLeft) {
   const r = row(), t = tau(Math.max(tenorLeft, 0.5));
-  const vol = ccy === "usd" ? r.vu : r.ve;
-  const g = gk(r[ccy], strike, r.rg * t, (ccy === "usd" ? r.ru : r.re) * t, vol * Math.sqrt(t));
-  return kind === "call" ? g.call : g.put;
+  const vol = ccy === 'usd' ? r.vu : r.ve;
+  const g = gk(r[ccy], strike, r.rg * t, (ccy === 'usd' ? r.ru : r.re) * t, vol * Math.sqrt(t));
+  return kind === 'call' ? g.call : g.put;
 }
 function posValue(p) {
   const r = row();
-  if (p.kind === "fwd") {
+  if (p.status === 'CLOSED') return 0;   // settled already — must not be valued again
+  if (p.kind === 'fwd') {
     const left = Math.max(p.matIdx - i, 1);
     return p.qty * (priceForward(p.ccy, left) - p.entry) / (1 + r.rg * tau(left));
   }
-  if (p.kind === "fut") return 0;                        // settled in cash each day
-  if (p.kind === "call" || p.kind === "put")
-    return p.qty * priceOption(p.ccy, p.kind, p.strike, p.matIdx - i);
-  return 0;
+  if (p.kind === 'fut') return 0;
+  return p.qty * priceOption(p.ccy, p.kind, p.strike, p.matIdx - i);
 }
-// PV in GBP of the dollars we must pay at T (buy them now and deposit = S / (1+r*·tau))
-function liabPV() {
-  if (!isMandate() || !liabOpen) return 0;
-  const r = row(), left = Math.max(liabMatIdx - i, 0);
-  const rfc = LIAB.ccy === "usd" ? r.ru : r.re;
-  return LIAB.qty * r[LIAB.ccy] / (1 + rfc * tau(left));
+/** Signed so it can be ADDED to assets: payable negative, receivable positive. */
+function liabValue() {
+  if (!liab || !liab.open) return 0;
+  const r = row(), left = Math.max(liab.matIdx - i, 0);
+  const rf = liab.ccy === 'usd' ? r.ru : r.re;
+  return -liab.qty * r[liab.ccy] / (1 + rf * tau(left));
 }
 function assets() {
   const r = row();
   return cash + fc.usd * r.usd + fc.eur * r.eur + book.reduce((a, p) => a + posValue(p), 0);
 }
-const nav = () => assets() - liabPV();
+const nav = () => assets() + liabValue();
 
-// Net currency exposure, in GBP. The mandated payable counts as a short FC position,
-// so hedging it REDUCES exposure instead of using up your limit.
-function exposureByCcy() {
-  const e = { usd: 0, eur: 0 };
-  e.usd += fc.usd; e.eur += fc.eur;
-  book.forEach(p => { e[p.ccy] += p.qty; });
-  if (isMandate() && liabOpen) e[LIAB.ccy] -= LIAB.qty;
+function exposureByCcy(extraCcy, extraQty) {
+  const e = { usd: fc.usd, eur: fc.eur };
+  book.forEach(p => { if (p.status !== 'CLOSED') e[p.ccy] += p.qty; });
+  if (liab && liab.open) e[liab.ccy] -= liab.qty;
+  if (extraCcy) e[extraCcy] += extraQty;
   return e;
 }
-function grossNotional() {
-  const r = row(), e = exposureByCcy();
-  return Math.abs(e.usd) * r.usd + Math.abs(e.eur) * r.eur;
-}
-// exposure if we added qty of ccy — used for the pre-trade limit check
-function exposureWith(ccy, qty) {
-  const r = row(), e = exposureByCcy();
-  e[ccy] += qty;
+function grossNotional(extraCcy, extraQty) {
+  const r = row(), e = exposureByCcy(extraCcy, extraQty);
   return Math.abs(e.usd) * r.usd + Math.abs(e.eur) * r.eur;
 }
 function marginReq() {
   const r = row();
   return book.reduce((a, p) => {
-    if (p.kind === "fut") return a + MARGIN.fut * Math.abs(p.qty) * r[p.ccy];
-    if ((p.kind === "call" || p.kind === "put") && p.qty < 0)
+    if (p.status === 'CLOSED') return a;
+    if (p.kind === 'fut') return a + MARGIN.fut * Math.abs(p.qty) * r[p.ccy];
+    if ((p.kind === 'call' || p.kind === 'put') && p.qty < 0)
       return a + MARGIN.shortOpt * Math.abs(p.qty) * r[p.ccy];
     return a;
   }, 0);
 }
 
-// ---------------------------------------------------------------- setup
-function reset() {
-  mode = document.getElementById("mode").value;
-  const [a, b] = SCEN[document.getElementById("scen").value];
-  const all = DATA.rows;
-  const iStart = all.findIndex(x => x.d >= a);
-  const iEnd = all.map(x => x.d <= b).lastIndexOf(true);
-  rows = all.slice(iStart, iEnd + 1);
-  i = 0; cash = START_CAP; fc = { usd: 0, eur: 0 }; book = [];
-  nTrades = 0; bust = false; uid = 1; liqMsg = ""; flashMsg = "";
-  liabOpen = isMandate();
-  liabMatIdx = Math.min(LIAB.tenor, rows.length - 1);
-  liabSettledCost = null;
-  navHist = [nav()]; benchHist = [nav()]; unhedgedHist = [nav()]; dateHist = [rows[0].d];
-  document.getElementById("t-strike").value = rows[0].usd.toFixed(3);
-  render();
+// ---------------------------------------------------------------- rounds
+/** Same rule as capitalFor_ in 03_Engine.gs. */
+function capitalFor(px, ccy, qty) {
+  const pv = Math.abs(qty) * px[ccy];
+  return Math.max(50, Math.round((qty > 0 ? 1.3 * pv : 0.3 * pv) / 50) * 50);
+}
+function buildRounds(startIdx) {
+  const out = [];
+  for (let k = 0; k < N_ROUNDS; k++) {
+    const s = startIdx + k * (ROUND_DAYS + 1), e = s + ROUND_DAYS;
+    if (e >= rows.length) break;
+    const p = PATTERN[k % PATTERN.length];
+    out.push({ round: k + 1, startIdx: s, endIdx: e, ccy: p.ccy, qty: p.qty,
+               capital: capitalFor(rows[s], p.ccy, p.qty) });
+  }
+  return out;
 }
 
-// ---------------------------------------------------------------- one day
+function startRound(k) {
+  cur = k;
+  const r = rounds[k];
+  i = r.startIdx;
+  book = []; fc = { usd: 0, eur: 0 }; uid = 1;
+  cash = r.capital;
+  liab = { ccy: r.ccy, qty: r.qty, matIdx: r.endIdx, open: true, cost: null };
+  bust = false; liqMsg = ''; roundTrades = 0;
+  navHist = [nav()]; dateHist = [rows[i].date]; benchHist = [nav()];
+  document.getElementById('t-strike').value = rows[i][r.ccy].toFixed(3);
+}
+
+function settleMandate() {
+  const r = row(), ccy = liab.ccy;
+  if (liab.qty > 0) {
+    const need = liab.qty, have = Math.min(Math.max(fc[ccy], 0), need), short = need - have;
+    fc[ccy] -= have;
+    const buy = short * r[ccy] * (1 + COST.spot);
+    cash -= buy;
+    liab.cost = have * r[ccy] + buy;
+  } else {
+    const proceeds = (-liab.qty) * r[ccy] * (1 - COST.spot);
+    cash += proceeds;
+    liab.cost = -proceeds;
+  }
+  liab.open = false;
+}
+
+function closeRound() {
+  const r = row();
+  if (liab && liab.open) settleMandate();
+  book.forEach(p => { if (p.status !== 'CLOSED') { cash += posValue(p); p.status = 'CLOSED'; } });
+  cash += fc.usd * r.usd + fc.eur * r.eur;
+  fc = { usd: 0, eur: 0 };
+  const m = metrics();
+  roundResults.push({ round: rd().round, ccy: rd().ccy, qty: rd().qty,
+                      netWorth: cash, vol: m.vol, dd: m.dd, he: m.he,
+                      trades: roundTrades, cost: liab ? liab.cost : null, bust: bust });
+}
+
+// ---------------------------------------------------------------- time
 function stepDay() {
-  if (bust || i >= rows.length - 1) return;
+  if (!isMandate()) return stepSpec();
+  if (cur >= rounds.length) return;
+  const r = rd();
+  if (i >= r.endIdx) {                      // round is over -> advance
+    if (cur + 1 < rounds.length) { startRound(cur + 1); render(); }
+    return;
+  }
   const prev = row();
   i++;
-  const r = row();
+  const px = row();
 
-  cash *= (1 + prev.rg / 252);                 // GBP cash earns SONIA
-  fc.usd *= (1 + prev.ru / 252);               // FC balances earn their own rate (the carry)
+  cash *= (1 + prev.rg / 252);
+  fc.usd *= (1 + prev.ru / 252);
   fc.eur *= (1 + prev.re / 252);
 
-  book.filter(p => p.kind === "fut").forEach(p => {          // futures: daily cash settlement
+  book.forEach(p => {
+    if (p.kind !== 'fut' || p.status === 'CLOSED') return;
     const fNow = priceForward(p.ccy, Math.max(p.matIdx - i, 1));
-    cash += p.qty * (fNow - p.lastF);
-    p.lastF = fNow;
+    cash += p.qty * (fNow - p.lastF); p.lastF = fNow;
   });
-
-  book = book.filter(p => {                                  // expiries
-    if (i < p.matIdx) return true;
-    if (p.kind === "fwd") cash += p.qty * (r[p.ccy] - p.entry);
-    else if (p.kind === "call") cash += p.qty * Math.max(r[p.ccy] - p.strike, 0);
-    else if (p.kind === "put") cash += p.qty * Math.max(p.strike - r[p.ccy], 0);
-    return false;
+  book.forEach(p => {
+    if (p.status === 'CLOSED' || i < p.matIdx) return;
+    if (p.kind === 'fwd') cash += p.qty * (px[p.ccy] - p.entry);
+    else if (p.kind === 'call') cash += p.qty * Math.max(px[p.ccy] - p.strike, 0);
+    else if (p.kind === 'put') cash += p.qty * Math.max(p.strike - px[p.ccy], 0);
+    p.status = 'CLOSED';
   });
-
-  if (liabOpen && i >= liabMatIdx) {                         // the payable falls due
-    const need = LIAB.qty;
-    const have = Math.min(fc[LIAB.ccy], need);
-    fc[LIAB.ccy] -= have;
-    const short = need - have;
-    liabSettledCost = have * r[LIAB.ccy] + short * r[LIAB.ccy] * (1 + COST.spot);
-    cash -= short * r[LIAB.ccy] * (1 + COST.spot);           // buy the rest at spot
-    liabOpen = false;
-  }
-
   benchHist.push(benchHist[benchHist.length - 1] * (1 + prev.rg / 252));
-  unhedgedHist.push(START_CAP - (isMandate() ? LIAB.qty * r[LIAB.ccy] : 0) +
-                    (isMandate() ? 0 : 0));                  // do-nothing net worth
-
-  if (nav() < marginReq()) liquidate("Margin call not met");
+  if (nav() < marginReq()) { liquidate(); liqMsg = 'Margin call not met'; }
   if (nav() <= 0) bust = true;
+  navHist.push(nav()); dateHist.push(px.date);
 
-  navHist.push(nav());
-  dateHist.push(r.d);
+  // NAV is recorded BEFORE the mandate settles, exactly as the Apps Script
+  // engine does it. Settlement is a known fee, not risk, so letting it land in
+  // the last day's return would inflate measured volatility for no good reason.
+  if (i >= rd().endIdx) closeRound();
   render();
 }
-function liquidate(reason) {
+
+function stepSpec() {
+  if (i >= rows.length - 1) return;
+  const prev = row(); i++; const px = row();
+  cash *= (1 + prev.rg / 252);
+  fc.usd *= (1 + prev.ru / 252); fc.eur *= (1 + prev.re / 252);
+  book.forEach(p => {
+    if (p.kind !== 'fut' || p.status === 'CLOSED') return;
+    const fNow = priceForward(p.ccy, Math.max(p.matIdx - i, 1));
+    cash += p.qty * (fNow - p.lastF); p.lastF = fNow;
+  });
+  book.forEach(p => {
+    if (p.status === 'CLOSED' || i < p.matIdx) return;
+    if (p.kind === 'fwd') cash += p.qty * (px[p.ccy] - p.entry);
+    else if (p.kind === 'call') cash += p.qty * Math.max(px[p.ccy] - p.strike, 0);
+    else if (p.kind === 'put') cash += p.qty * Math.max(p.strike - px[p.ccy], 0);
+    p.status = 'CLOSED';
+  });
+  benchHist.push(benchHist[benchHist.length - 1] * (1 + prev.rg / 252));
+  if (nav() < marginReq()) { liquidate(); liqMsg = 'Margin call not met'; }
+  if (nav() <= 0) bust = true;
+  navHist.push(nav()); dateHist.push(px.date);
+  render();
+}
+
+function liquidate() {
   const r = row();
-  book.forEach(p => { cash += posValue(p); });
+  book.forEach(p => { if (p.status !== 'CLOSED') { cash += posValue(p); p.status = 'CLOSED'; } });
   cash += fc.usd * r.usd + fc.eur * r.eur;
-  fc = { usd: 0, eur: 0 }; book = [];
-  liqMsg = reason;
+  fc = { usd: 0, eur: 0 };
 }
 
 // ---------------------------------------------------------------- trading
+function maxTenor() {
+  if (!isMandate()) return 63;
+  return Math.max(rd().endIdx - i, 0);
+}
 function quote() {
   if (!rows.length) return;
-  const kind = document.getElementById("t-kind").value;
-  const ccy = document.getElementById("t-ccy").value;
-  const ten = +document.getElementById("t-ten").value;
-  const qty = Math.abs(+document.getElementById("t-qty").value || 0);
-  const dir = +document.getElementById("t-dir").value;
+  const kind = document.getElementById('t-kind').value;
+  const ccy = document.getElementById('t-ccy').value;
+  const qty = Math.abs(+document.getElementById('t-qty').value || 0);
+  const dir = +document.getElementById('t-dir').value;
+  const ten = maxTenor();
   const r = row();
-  document.getElementById("wrap-ten").style.display = kind === "spot" ? "none" : "";
-  document.getElementById("wrap-strike").style.display = (kind === "call" || kind === "put") ? "" : "none";
-  let html = `spot ${ccy.toUpperCase()} = <b>${fmt(r[ccy], 4)}</b> GBP &nbsp;·&nbsp; realised vol ${(100*(ccy==="usd"?r.vu:r.ve)).toFixed(1)}%`;
-  if (kind === "fwd" || kind === "fut") {
+  document.getElementById('wrap-strike').style.display = (kind === 'call' || kind === 'put') ? '' : 'none';
+  let html = `spot ${ccy.toUpperCase()} = <b>${fmt(r[ccy], 4)}</b> GBP &nbsp;·&nbsp; realised vol ${(100*(ccy==='usd'?r.vu:r.ve)).toFixed(1)}%`;
+  if (kind !== 'spot') html += ` &nbsp;·&nbsp; matures in <b>${ten}</b> days`;
+  if (kind === 'fwd' || kind === 'fut') {
     const F = priceForward(ccy, ten);
-    html += `<br/>CIP ${kind === "fut" ? "futures" : "forward"} rate = <b>${fmt(F, 4)}</b>
-             ${F > r[ccy] ? "(premium)" : "(discount)"} &nbsp;·&nbsp; notional £${fmt0(qty * r[ccy])}`;
-    if (kind === "fut") html += `<br/>margin needed ≈ <b>£${fmt0(MARGIN.fut * qty * r[ccy])}</b>`;
+    html += `<br/>CIP ${kind === 'fut' ? 'futures' : 'forward'} = <b>${fmt(F, 4)}</b>
+             ${F > r[ccy] ? '(premium)' : '(discount)'} &nbsp;·&nbsp; notional £${fmt0(qty * r[ccy])}`;
+    if (kind === 'fut') html += `<br/>margin ≈ <b>£${fmt0(MARGIN.fut * qty * r[ccy])}</b>`;
   }
-  if (kind === "call" || kind === "put") {
-    const X = +document.getElementById("t-strike").value || r[ccy];
+  if (kind === 'call' || kind === 'put') {
+    const X = +document.getElementById('t-strike').value || r[ccy];
     const prem = priceOption(ccy, kind, X, ten);
-    html += `<br/>premium = <b>${fmt(prem, 5)}</b> GBP per ${ccy.toUpperCase()} → total <b>£${fmt0(prem * qty * (1 + COST.opt))}</b>`;
-    if (dir < 0) html += `<br/><span style="color:#B2182B;">writing: margin ≈ £${fmt0(MARGIN.shortOpt * qty * r[ccy])}, loss is unlimited</span>`;
+    html += `<br/>premium = <b>${fmt(prem, 5)}</b> per ${ccy.toUpperCase()} → total <b>£${fmt0(prem * qty * (1 + COST.opt))}</b>`;
+    if (dir < 0) html += `<br/><span style="color:#B2182B;">writing: margin ≈ £${fmt0(MARGIN.shortOpt * qty * r[ccy])}, loss unlimited</span>`;
   }
-  document.getElementById("quote").innerHTML = html;
+  const e = exposureByCcy();
+  html += `<br/><span class="muted">net exposure now: USD ${fmt0(e.usd)} · EUR ${fmt0(e.eur)}</span>`;
+  document.getElementById('quote').innerHTML = html;
 }
 
 function trade() {
   if (bust) return;
-  const kind = document.getElementById("t-kind").value;
-  const ccy = document.getElementById("t-ccy").value;
-  const dir = +document.getElementById("t-dir").value;
-  const qty = Math.abs(+document.getElementById("t-qty").value || 0) * dir;
-  const ten = +document.getElementById("t-ten").value;
+  const kind = document.getElementById('t-kind').value;
+  const ccy = document.getElementById('t-ccy').value;
+  const dir = +document.getElementById('t-dir').value;
+  const qty = Math.abs(+document.getElementById('t-qty').value || 0) * dir;
+  const ten = maxTenor();
   const r = row();
   if (!qty) return;
+  if (isMandate() && i >= rd().endIdx) { flash('The round closes today — no new trades.'); return; }
+  if (kind !== 'spot' && ten < 1) { flash('No time left in this round for a derivative.'); return; }
 
-  if (exposureWith(ccy, qty) > MAX_LEVERAGE * Math.max(nav(), 1)) {
-    flash(`Rejected: that would take your net currency exposure above ${MAX_LEVERAGE}× your equity. Hedging the payable reduces exposure; adding to it uses your limit.`); return;
+  if (grossNotional(ccy, qty) > MAX_LEVERAGE * Math.max(nav(), 1)) {
+    flash(`Rejected: net FX exposure would be ${(grossNotional(ccy, qty) / Math.max(nav(),1)).toFixed(1)}× equity, limit is ${MAX_LEVERAGE}×. Hedging the mandate reduces exposure; adding to it uses your limit.`);
+    return;
   }
 
-  if (kind === "spot") {
+  if (kind === 'spot') {
     const c = qty * r[ccy] * (1 + Math.sign(qty) * COST.spot);
-    if (qty > 0 && cash - c < 0) { flash("Rejected: not enough cash."); return; }
+    if (qty > 0 && cash - c < 0) { flash('Rejected: not enough cash.'); return; }
     cash -= c; fc[ccy] += qty;
-  } else if (kind === "fwd") {
-    const F = priceForward(ccy, ten) * (1 + Math.sign(qty) * COST.fwd);
-    book.push({ id: uid++, kind, ccy, qty, entry: F, matIdx: i + ten, opened: r.d });
-  } else if (kind === "fut") {
-    const F = priceForward(ccy, ten) * (1 + Math.sign(qty) * COST.fut);
-    if (nav() < marginReq() + MARGIN.fut * Math.abs(qty) * r[ccy]) { flash("Rejected: not enough margin."); return; }
-    book.push({ id: uid++, kind, ccy, qty, entry: F, lastF: F, matIdx: i + ten, opened: r.d });
+  } else if (kind === 'fwd' || kind === 'fut') {
+    const F = priceForward(ccy, ten) * (1 + Math.sign(qty) * (kind === 'fwd' ? COST.fwd : COST.fut));
+    if (kind === 'fut' && nav() < marginReq() + MARGIN.fut * Math.abs(qty) * r[ccy]) {
+      flash('Rejected: not enough free margin.'); return;
+    }
+    book.push({ id: uid++, kind, ccy, qty, entry: F, lastF: F, strike: null, matIdx: i + ten, status: 'OPEN' });
   } else {
-    const X = +document.getElementById("t-strike").value || r[ccy];
+    const X = +document.getElementById('t-strike').value || r[ccy];
     const prem = priceOption(ccy, kind, X, ten);
     const paid = qty * prem * (1 + Math.sign(qty) * COST.opt);
-    if (qty > 0 && cash < paid) { flash("Rejected: not enough cash for the premium."); return; }
+    if (qty > 0 && cash < paid) { flash('Rejected: not enough cash for the premium.'); return; }
+    if (qty < 0 && nav() < marginReq() + MARGIN.shortOpt * Math.abs(qty) * r[ccy]) {
+      flash('Rejected: not enough margin to write this option.'); return;
+    }
     cash -= paid;
-    book.push({ id: uid++, kind, ccy, qty, entry: prem, strike: X, matIdx: i + ten, opened: r.d });
+    book.push({ id: uid++, kind, ccy, qty, entry: prem, strike: X, matIdx: i + ten, status: 'OPEN' });
   }
-  nTrades++; navHist[navHist.length - 1] = nav(); render();
+  nTrades++; roundTrades++;
+  navHist[navHist.length - 1] = nav();
+  render();
 }
 
 function closePos(id) {
-  const p = book.find(x => x.id === id); if (!p) return;
+  const p = book.find(x => x.id === id); if (!p || p.status === 'CLOSED') return;
   cash += posValue(p) * (1 - COST.fwd);
-  book = book.filter(x => x.id !== id);
-  nTrades++; navHist[navHist.length - 1] = nav(); render();
+  p.status = 'CLOSED';
+  nTrades++; roundTrades++; navHist[navHist.length - 1] = nav(); render();
 }
 function closeSpot(ccy) {
   const r = row();
   cash += fc[ccy] * r[ccy] * (1 - Math.sign(fc[ccy]) * COST.spot);
-  fc[ccy] = 0; nTrades++; navHist[navHist.length - 1] = nav(); render();
+  fc[ccy] = 0; nTrades++; roundTrades++; navHist[navHist.length - 1] = nav(); render();
 }
-function flash(m) { flashMsg = m; render(); setTimeout(() => { flashMsg = ""; render(); }, 3500); }
+function flash(m) { flashMsg = m; render(); setTimeout(() => { flashMsg = ''; render(); }, 4000); }
+
+/** Fill the ticket with the exact forward hedge for this round's mandate. */
+function autoHedge() {
+  if (!isMandate() || !liab || !liab.open) { flash('No open mandate to hedge.'); return; }
+  document.getElementById('t-kind').value = 'fwd';
+  document.getElementById('t-ccy').value = liab.ccy;
+  document.getElementById('t-dir').value = liab.qty > 0 ? '1' : '-1';
+  document.getElementById('t-qty').value = Math.abs(liab.qty);
+  quote();
+}
 
 // ---------------------------------------------------------------- metrics
 function metrics() {
-  const rets = [];
+  const rets = [], bench = [];
+  const r0 = isMandate() ? rd() : null;
   for (let k = 1; k < navHist.length; k++) {
     const base = Math.abs(navHist[k - 1]);
     if (base > 1e-6) rets.push((navHist[k] - navHist[k - 1]) / base);
+    if (r0) {
+      const i0 = r0.startIdx + k - 1, i1 = r0.startIdx + k;
+      if (i1 < rows.length) {
+        const b0 = r0.capital - r0.qty * rows[i0][r0.ccy];
+        const b1 = r0.capital - r0.qty * rows[i1][r0.ccy];
+        if (Math.abs(b0) > 1e-9) bench.push((b1 - b0) / Math.abs(b0));
+      }
+    }
   }
   const n = rets.length;
-  const total = navHist[0] !== 0 ? navHist[navHist.length - 1] / navHist[0] - 1 : 0;
-  if (n < 2) return { total, vol: 0, sharpe: 0, dd: 0, worst: 0, he: null, n };
+  if (n < 2) return { change: 0, vol: 0, dd: 0, worst: 0, he: null };
   const mean = rets.reduce((a, b) => a + b, 0) / n;
   const sd = Math.sqrt(rets.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1));
-  const rfDaily = rows.slice(0, n).reduce((a, r) => a + r.rg / 252, 0) / n;
   let peak = navHist[0], dd = 0;
   navHist.forEach(v => { peak = Math.max(peak, v); if (peak > 0) dd = Math.min(dd, v / peak - 1); });
-
-  // hedge effectiveness: how much of the unhedged net-worth variance did you remove?
   let he = null;
-  if (isMandate()) {
-    const unh = [];
-    for (let k = 1; k <= n; k++) {
-      const a0 = START_CAP - LIAB.qty * rows[k - 1][LIAB.ccy];
-      const a1 = START_CAP - LIAB.qty * rows[k][LIAB.ccy];
-      if (Math.abs(a0) > 1e-6) unh.push((a1 - a0) / Math.abs(a0));
-    }
-    if (unh.length > 2) {
-      const mu = unh.reduce((a, b) => a + b, 0) / unh.length;
-      const sdu = Math.sqrt(unh.reduce((a, b) => a + (b - mu) ** 2, 0) / (unh.length - 1));
-      if (sdu > 0) he = 1 - (sd * sd) / (sdu * sdu);
-    }
+  if (bench.length > 2) {
+    const bm = bench.reduce((a, b) => a + b, 0) / bench.length;
+    const bsd = Math.sqrt(bench.reduce((a, b) => a + (b - bm) ** 2, 0) / (bench.length - 1));
+    if (bsd > 0) he = 1 - (sd * sd) / (bsd * bsd);
   }
-  return { total, vol: sd * Math.sqrt(252), sharpe: sd > 0 ? (mean - rfDaily) / sd * Math.sqrt(252) : 0,
-           dd, worst: Math.min(...rets), he, n };
+  return { change: navHist[0] !== 0 ? navHist[navHist.length - 1] / navHist[0] - 1 : 0,
+           vol: sd * Math.sqrt(252), dd, worst: Math.min(...rets), he };
 }
 
 // ---------------------------------------------------------------- render
 function render() {
   if (!rows.length) return;
   const r = row(), N = nav(), mreq = marginReq(), gn = grossNotional();
-  document.getElementById("datelab").innerHTML =
-    `<b>${r.d}</b> &nbsp;·&nbsp; day ${i + 1} of ${rows.length} &nbsp;·&nbsp; USD ${fmt(r.usd, 4)} · EUR ${fmt(r.eur, 4)} GBP per unit`;
+  const m = metrics();
+
+  document.getElementById('datelab').innerHTML =
+    `<b>${r.date}</b> &nbsp;·&nbsp; USD ${fmt(r.usd, 4)} · EUR ${fmt(r.eur, 4)} GBP per unit` +
+    (isMandate() ? ` &nbsp;·&nbsp; round ${rd().round} of ${rounds.length}, day ${i - rd().startIdx + 1} of ${ROUND_DAYS + 1}` : '');
+
+  // round strip
+  document.getElementById('rstrip').innerHTML = isMandate() ? rounds.map((x, k) => {
+    const done = roundResults.find(q => q.round === x.round);
+    const cls = done ? 'done' : (k === cur ? 'now' : '');
+    const lbl = (x.qty > 0 ? 'owe ' : 'receive ') + Math.abs(x.qty) + ' ' + x.ccy.toUpperCase();
+    return `<div class="rchip ${cls}">R${x.round} · ${lbl}
+      <small>${done ? 'hedge eff ' + (done.he === null ? '—' : (100*done.he).toFixed(0) + '%') +
+                      ' · vol ' + (100*done.vol).toFixed(1) + '%'
+                    : (k === cur ? 'in progress' : 'capital £' + fmt0(x.capital))}</small></div>`;
+  }).join('') : '';
 
   // mandate banner
   if (isMandate()) {
-    const left = Math.max(liabMatIdx - i, 0);
-    const lockable = priceForward(LIAB.ccy, Math.max(left, 1)) * LIAB.qty;
-    document.getElementById("mandateBox").innerHTML = liabOpen
-      ? `<div class="mand"><b>Your mandate.</b> Your firm must pay <b>USD ${fmt0(LIAB.qty)}</b> in
-         <b>${left} trading days</b>. You hold £${fmt0(START_CAP)} of working capital. Make the cost
-         <i>certain</i>. Cost if you locked it in today with a forward: <b>£${fmt0(lockable)}</b>.
-         Cost if you did nothing and paid spot today: <b>£${fmt0(LIAB.qty * r[LIAB.ccy])}</b>.</div>`
-      : `<div class="mand"><b>The payable has settled.</b> It cost you
-         <b>£${fmt0(liabSettledCost || 0)}</b>. Your remaining net worth is your score for certainty:
-         check volatility and hedge effectiveness below, not return.</div>`;
+    const left = Math.max(liab.matIdx - i, 0);
+    const lock = priceForward(liab.ccy, Math.max(left, 1)) * Math.abs(liab.qty);
+    document.getElementById('mandateBox').innerHTML = liab.open
+      ? `<div class="mand"><b>Round ${rd().round}.</b> You ${liab.qty > 0 ? 'must pay' : 'will receive'}
+         <b>${fmt0(Math.abs(liab.qty))} ${liab.ccy.toUpperCase()}</b> in <b>${left} trading days</b>.
+         Working capital <b>£${fmt0(rd().capital)}</b>. Fixing it with a forward today is worth
+         <b>£${fmt0(lock)}</b>. Hedge by <b>${liab.qty > 0 ? 'buying' : 'selling'}
+         ${liab.ccy.toUpperCase()} forward</b>${liab.qty > 0 ? ' (or a call)' : ' (or a put)'}.</div>`
+      : `<div class="mand"><b>Round ${rd().round} settled.</b> The mandate
+         ${liab.cost >= 0 ? 'cost you <b>£' + fmt0(liab.cost) + '</b>' : 'brought in <b>£' + fmt0(-liab.cost) + '</b>'}.
+         ${cur + 1 < rounds.length ? 'Press <b>day</b> to start round ' + (rd().round + 1) + '.' : 'That was the last round.'}</div>`;
   } else {
-    document.getElementById("mandateBox").innerHTML =
-      `<div class="mand"><b>Speculation sleeve.</b> £${fmt0(START_CAP)}, no obligations, maximum ${MAX_LEVERAGE}× gross notional.</div>`;
+    document.getElementById('mandateBox').innerHTML =
+      `<div class="mand"><b>Speculation sleeve.</b> £${fmt0(SPEC_CAPITAL)}, no obligations, max ${MAX_LEVERAGE}× net exposure.</div>`;
   }
 
-  document.getElementById("k-nav").innerHTML =
-    `<div class="small muted">${isMandate() ? "net worth" : "equity (NAV)"}</div><b class="${N>=0?"":"bad"}">£${fmt0(N)}</b>`;
-  document.getElementById("k-cash").innerHTML = `<div class="small muted">GBP cash</div><b>£${fmt0(cash)}</b>`;
+  document.getElementById('k-nav').innerHTML = `<div class="small muted">${isMandate() ? 'net worth' : 'equity'}</div><b class="${N>=0?'':'bad'}">£${fmt0(N)}</b>`;
+  document.getElementById('k-cash').innerHTML = `<div class="small muted">GBP cash</div><b>£${fmt0(cash)}</b>`;
   const pnl = N - navHist[0];
-  document.getElementById("k-pnl").innerHTML =
-    `<div class="small muted">change since start</div><b class="${pnl >= 0 ? "ok" : "bad"}">${money(pnl)}</b>`;
-  document.getElementById("k-notional").innerHTML =
-    `<div class="small muted">net FX exposure</div><b>£${fmt0(gn)} <span class="small muted">(${(N>0?gn/N:0).toFixed(1)}×)</span></b>`;
-  document.getElementById("k-margin").innerHTML =
-    `<div class="small muted">margin used / free</div><b>£${fmt0(mreq)} / £${fmt0(N - mreq)}</b>`;
+  document.getElementById('k-pnl').innerHTML = `<div class="small muted">change this round</div><b class="${pnl>=0?'ok':'bad'}">${money(pnl)}</b>`;
+  document.getElementById('k-notional').innerHTML = `<div class="small muted">net FX exposure</div><b>£${fmt0(gn)} <span class="small muted">(${(N>0?gn/N:0).toFixed(1)}×)</span></b>`;
+  document.getElementById('k-margin').innerHTML = `<div class="small muted">margin used / free</div><b>£${fmt0(mreq)} / £${fmt0(N-mreq)}</b>`;
 
-  let al = "";
+  let al = '';
   if (flashMsg) al += `<div class="warn" style="margin-bottom:6px;">${flashMsg}</div>`;
-  if (liqMsg) al += `<div class="bust" style="margin-bottom:6px;"><b>Liquidated.</b> ${liqMsg}: your equity fell below the margin you owed, so every position was closed at the market. This is the ruin risk from Lecture 4 — being right later does not help if you cannot fund the position today.</div>`;
-  if (bust) al += `<div class="bust"><b>You are bust.</b> Net worth reached zero. Reset and try a different approach.</div>`;
+  if (liqMsg) al += `<div class="bust" style="margin-bottom:6px;"><b>Liquidated.</b> ${liqMsg}: equity fell below the margin you owed, so every position was closed at the market. This is the ruin risk from Lecture 4 — being right later does not help if you cannot fund the position today.</div>`;
+  if (bust) al += `<div class="bust"><b>You are bust.</b> Net worth reached zero this round.</div>`;
   else if (mreq > 0 && N < mreq * 1.25) al += `<div class="warn">Margin warning: free margin is nearly gone.</div>`;
-  if (i >= rows.length - 1) al += `<div class="warn"><b>Scenario finished.</b> Read your performance report below.</div>`;
-  document.getElementById("alerts").innerHTML = al;
+  if (isMandate() && cur === rounds.length - 1 && i >= rd().endIdx)
+    al += `<div class="warn"><b>All rounds finished.</b> Your term score is below.</div>`;
+  document.getElementById('alerts').innerHTML = al;
 
+  // book
   let t = `<tr><th>position</th><th>size</th><th>entry</th><th>now</th><th>value</th><th></th></tr>`;
-  if (isMandate() && liabOpen)
-    t += `<tr class="posrow" style="background:#FBE9EA;"><td><b>USD payable</b> (mandate)</td><td>${fmt0(-LIAB.qty)}</td>
-          <td>—</td><td>${fmt(r[LIAB.ccy], 4)}</td><td class="bad">${money(-liabPV())}</td><td></td></tr>`;
-  ["usd", "eur"].forEach(c => {
+  if (isMandate() && liab.open)
+    t += `<tr class="posrow" style="background:${liab.qty>0?'#FBE9EA':'#F2F7F2'};"><td><b>${liab.qty>0?'payable':'receivable'}</b> (mandate)</td>
+          <td>${fmt0(-liab.qty)}</td><td>—</td><td>${fmt(r[liab.ccy],4)}</td>
+          <td class="${liab.qty>0?'bad':'ok'}">${money(liabValue())}</td><td></td></tr>`;
+  ['usd','eur'].forEach(c => {
     if (Math.abs(fc[c]) > 0.01) t += `<tr class="posrow"><td>spot ${c.toUpperCase()}</td><td>${fmt0(fc[c])}</td>
-      <td>—</td><td>${fmt(r[c], 4)}</td><td>£${fmt0(fc[c] * r[c])}</td>
+      <td>—</td><td>${fmt(r[c],4)}</td><td>£${fmt0(fc[c]*r[c])}</td>
       <td><button style="font-size:11px;padding:2px 6px;" onclick="closeSpot('${c}')">close</button></td></tr>`;
   });
-  book.forEach(p => {
+  book.filter(p => p.status !== 'CLOSED').forEach(p => {
     const v = posValue(p), left = p.matIdx - i;
-    const nowPx = (p.kind === "fwd" || p.kind === "fut") ? priceForward(p.ccy, Math.max(left, 1))
+    const nowPx = (p.kind === 'fwd' || p.kind === 'fut') ? priceForward(p.ccy, Math.max(left,1))
                  : priceOption(p.ccy, p.kind, p.strike, left);
-    const lbl = p.kind === "fut" ? `future ${p.ccy.toUpperCase()}`
-              : p.kind === "fwd" ? `forward ${p.ccy.toUpperCase()}`
-              : `${p.kind} ${p.ccy.toUpperCase()} @${fmt(p.strike, 3)}`;
+    const lbl = p.kind === 'fut' ? `future ${p.ccy.toUpperCase()}`
+              : p.kind === 'fwd' ? `forward ${p.ccy.toUpperCase()}`
+              : `${p.kind} ${p.ccy.toUpperCase()} @${fmt(p.strike,3)}`;
     t += `<tr class="posrow"><td>${lbl} <span class="small muted">(${left}d)</span></td>
-      <td>${fmt0(p.qty)}</td><td>${fmt(p.entry, 4)}</td><td>${fmt(nowPx, 4)}</td>
-      <td class="${v >= 0 ? "ok" : "bad"}">${p.kind === "fut" ? "<span class='small muted'>cash-settled daily</span>" : money(v)}</td>
+      <td>${fmt0(p.qty)}</td><td>${fmt(p.entry,4)}</td><td>${fmt(nowPx,4)}</td>
+      <td class="${v>=0?'ok':'bad'}">${p.kind==='fut'?"<span class='small muted'>cash-settled daily</span>":money(v)}</td>
       <td><button style="font-size:11px;padding:2px 6px;" onclick="closePos(${p.id})">close</button></td></tr>`;
   });
-  if (!book.length && !fc.usd && !fc.eur && !(isMandate() && liabOpen))
-    t += `<tr><td colspan="6" class="small muted">No positions.</td></tr>`;
-  document.getElementById("book").innerHTML = t;
+  if (t.indexOf('posrow') < 0) t += `<tr><td colspan="6" class="small muted">No positions.</td></tr>`;
+  document.getElementById('book').innerHTML = t;
 
-  const m = metrics();
-  document.getElementById("m-ret").innerHTML = `<div class="small muted">${isMandate() ? "net-worth change" : "total return"}</div><b class="${m.total>=0?"ok":"bad"}">${(100*m.total).toFixed(2)}%</b>`;
-  document.getElementById("m-vol").innerHTML = `<div class="small muted">volatility (ann.)</div><b>${(100*m.vol).toFixed(1)}%</b>`;
-  document.getElementById("m-sharpe").innerHTML = `<div class="small muted">Sharpe ratio</div><b>${m.sharpe.toFixed(2)}</b>`;
-  document.getElementById("m-dd").innerHTML = `<div class="small muted">max drawdown</div><b class="bad">${(100*m.dd).toFixed(1)}%</b>`;
-  document.getElementById("m-worst").innerHTML = `<div class="small muted">worst day</div><b class="bad">${(100*m.worst).toFixed(2)}%</b>`;
-  document.getElementById("m-he").innerHTML = isMandate()
-    ? `<div class="small muted">hedge effectiveness</div><b class="${(m.he||0)>0.5?"ok":""}">${m.he === null ? "—" : (100*m.he).toFixed(0) + "%"}</b>`
-    : `<div class="small muted">hedge effectiveness</div><b class="small muted">n/a</b>`;
-  document.getElementById("m-trades").innerHTML = `<div class="small muted">trades placed</div><b>${nTrades}</b>`;
+  // this round
+  document.getElementById('m-ret').innerHTML = `<div class="small muted">change</div><b class="${m.change>=0?'ok':'bad'}">${(100*m.change).toFixed(2)}%</b>`;
+  document.getElementById('m-vol').innerHTML = `<div class="small muted">volatility (ann.)</div><b>${(100*m.vol).toFixed(1)}%</b>`;
+  document.getElementById('m-dd').innerHTML = `<div class="small muted">max drawdown</div><b class="bad">${(100*m.dd).toFixed(1)}%</b>`;
+  document.getElementById('m-worst').innerHTML = `<div class="small muted">worst day</div><b class="bad">${(100*m.worst).toFixed(2)}%</b>`;
+  document.getElementById('m-he').innerHTML = `<div class="small muted">hedge effectiveness</div><b class="${(m.he||0)>0.8?'ok':''}">${m.he===null?'—':(100*m.he).toFixed(0)+'%'}</b>`;
+  document.getElementById('m-trades').innerHTML = `<div class="small muted">trades this round</div><b>${roundTrades}</b>`;
 
-  document.getElementById("chartlab").innerHTML = isMandate()
-    ? "Your net worth (working capital minus the payable, plus your hedges) vs. doing nothing at all"
-    : "Equity curve vs. leaving the £1,000 in a SONIA deposit";
+  // term aggregate
+  const hes = roundResults.filter(x => x.he !== null).map(x => 100 * x.he);
+  const avg = hes.length ? hes.reduce((a,b)=>a+b,0)/hes.length : null;
+  document.getElementById('t-avg').innerHTML = `<div class="small muted">avg hedge effectiveness</div><b class="${(avg||0)>80?'ok':''}">${avg===null?'—':avg.toFixed(0)+'%'}</b>`;
+  document.getElementById('t-worst').innerHTML = `<div class="small muted">worst round</div><b>${hes.length?Math.min(...hes).toFixed(0)+'%':'—'}</b>`;
+  document.getElementById('t-done').innerHTML = `<div class="small muted">rounds completed</div><b>${roundResults.length} of ${rounds.length}</b>`;
+
+  document.getElementById('rtable').innerHTML = roundResults.length
+    ? `<tr><th>round</th><th>mandate</th><th>net worth</th><th>vol</th><th>max DD</th><th>hedge eff.</th><th>trades</th></tr>` +
+      roundResults.map(x => `<tr><td>R${x.round}</td>
+        <td>${x.qty>0?'owe ':'receive '}${Math.abs(x.qty)} ${x.ccy.toUpperCase()}</td>
+        <td>£${fmt0(x.netWorth)}</td><td>${(100*x.vol).toFixed(1)}%</td>
+        <td class="bad">${(100*x.dd).toFixed(1)}%</td>
+        <td class="${(x.he||0)>0.8?'ok':''}">${x.he===null?'—':(100*x.he).toFixed(0)+'%'}</td>
+        <td>${x.trades}</td></tr>`).join('')
+    : `<tr><td class="small muted">No completed rounds yet.</td></tr>`;
+
+  document.getElementById('chartlab').innerHTML = isMandate()
+    ? `Round ${rd().round}: your net worth vs. leaving the mandate completely unhedged`
+    : 'Equity vs. a SONIA deposit';
 
   quote(); drawChart();
 }
 
 function drawChart() {
-  const doNothing = dateHist.map((d, k) =>
-    isMandate() ? START_CAP * (k ? benchHist[k] / benchHist[0] : 1) - LIAB.qty * rows[k][LIAB.ccy]
-                : benchHist[k]);
+  const r0 = isMandate() ? rd() : null;
+  const doNothing = dateHist.map((d, k) => r0
+    ? r0.capital * (benchHist[k] / benchHist[0]) - r0.qty * rows[r0.startIdx + k][r0.ccy]
+    : benchHist[k]);
   if (chart) chart.destroy();
-  chart = new Chart(document.getElementById("eqChart"), {
-    type: "line",
+  chart = new Chart(document.getElementById('eqChart'), {
+    type: 'line',
     data: { labels: dateHist, datasets: [
-      { label: isMandate() ? "your net worth" : "your equity", data: navHist, borderColor: BRAND, pointRadius: 0, borderWidth: 2.2 },
-      { label: isMandate() ? "if you did nothing" : "SONIA deposit", data: doNothing, borderColor: "#888", pointRadius: 0, borderWidth: 1.4, borderDash: [5,4] }
+      { label: isMandate() ? 'your net worth' : 'your equity', data: navHist, borderColor: BRAND, pointRadius: 0, borderWidth: 2.2 },
+      { label: isMandate() ? 'if you did nothing' : 'SONIA deposit', data: doNothing, borderColor: '#888', pointRadius: 0, borderWidth: 1.4, borderDash: [5,4] }
     ]},
-    options: Object.assign(baseChartOpts("", "GBP"), {
-      scales: { x: { ticks: { maxTicksLimit: 8 }, grid: { display: false } }, y: { title: { display: true, text: "GBP" } } }
+    options: Object.assign(baseChartOpts('', 'GBP'), {
+      scales: { x: { ticks: { maxTicksLimit: 7 }, grid: { display: false } }, y: { title: { display: true, text: 'GBP' } } }
     })
   });
 }
 
-["step1","step5","step21"].forEach((id, k) => {
-  const n = [1, 5, 21][k];
-  document.getElementById(id).addEventListener("click", () => { for (let q = 0; q < n; q++) stepDay(); });
-});
-document.getElementById("reset").addEventListener("click", reset);
-document.getElementById("scen").addEventListener("change", reset);
-document.getElementById("mode").addEventListener("change", reset);
-document.getElementById("doTrade").addEventListener("click", trade);
-["t-kind","t-ccy","t-dir","t-qty","t-ten","t-strike"].forEach(id =>
-  document.getElementById(id).addEventListener("input", quote));
+// ---------------------------------------------------------------- setup
+function reset() {
+  mode = document.getElementById('mode').value;
+  const startDate = START[document.getElementById('scen').value];
+  let s = rows.findIndex(x => x.date >= startDate);
+  if (s < 0) s = 0;
+  roundResults = []; nTrades = 0; liqMsg = ''; flashMsg = '';
+  if (isMandate()) {
+    rounds = buildRounds(s);
+    if (!rounds.length) { document.getElementById('alerts').innerHTML =
+      '<div class="bust">Not enough price history after that date for four rounds.</div>'; return; }
+    startRound(0);
+  } else {
+    rounds = []; cur = 0; i = s;
+    cash = SPEC_CAPITAL; fc = { usd: 0, eur: 0 }; book = []; uid = 1; liab = null;
+    bust = false; roundTrades = 0;
+    navHist = [nav()]; dateHist = [rows[i].date]; benchHist = [nav()];
+    document.getElementById('t-strike').value = rows[i].usd.toFixed(3);
+  }
+  render();
+}
 
-fetch("../assets/simdata.json").then(r => r.json()).then(j => { DATA = j; reset(); })
-  .catch(e => { document.getElementById("alerts").innerHTML = `<div class="bust">Could not load price data: ${e.message}</div>`; });
+document.getElementById('step1').addEventListener('click', () => stepDay());
+document.getElementById('step5').addEventListener('click', () => { for (let k=0;k<5;k++) stepDay(); });
+document.getElementById('stepR').addEventListener('click', () => {
+  if (!isMandate()) { for (let k=0;k<21;k++) stepDay(); return; }
+  const target = rd().endIdx;
+  let guard = 0;
+  while (i < target && guard++ < 400) stepDay();
+});
+document.getElementById('reset').addEventListener('click', reset);
+document.getElementById('scen').addEventListener('change', reset);
+document.getElementById('mode').addEventListener('change', reset);
+document.getElementById('doTrade').addEventListener('click', trade);
+document.getElementById('hedgeMe').addEventListener('click', autoHedge);
+['t-kind','t-ccy','t-dir','t-qty','t-strike'].forEach(id =>
+  document.getElementById(id).addEventListener('input', quote));
+
+fetch('../assets/simdata.json').then(r => r.json()).then(j => {
+  DATA = j;
+  rows = j.rows.map(r => ({ date: r.d, usd: r.usd, eur: r.eur, rg: r.rg, ru: r.ru, re: r.re, vu: r.vu, ve: r.ve }));
+  reset();
+}).catch(e => { document.getElementById('alerts').innerHTML = `<div class="bust">Could not load price data: ${e.message}</div>`; });
 </script>
 </main>
 </body>
