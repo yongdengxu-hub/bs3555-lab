@@ -1,0 +1,1455 @@
+/**
+ * BS3555 FX Trading Game — complete Apps Script project (single file).
+ *
+ * This is 00_Config .. 06_WebApp concatenated, for easy pasting into the
+ * Apps Script editor. The only other file you need is Dashboard.html.
+ * Generated 2026-08-22. Edit the individual files and re-run
+ * tools/combine.sh if you prefer to work on them separately.
+ */
+
+// ===================================================================
+// ===  00_Config.gs
+// ===================================================================
+/**
+ * BS3555 FX Trading Game — configuration and sheet helpers.
+ *
+ * DESIGN NOTE (important): orders are APPEND-ONLY. Students never mutate state.
+ * Every change to cash, positions and NAV happens inside the single nightly job.
+ * That is what removes all concurrency problems with 150 students.
+ */
+
+// ---------------------------------------------------------------- defaults
+// These are written into the Config sheet by setupGame(). Edit them there,
+// not here, once the game is running.
+var DEFAULTS = {
+  GAME_START:       '2026-09-28',   // first trading day of the game
+  GAME_END:         '2026-12-11',   // last trading day
+  START_CAPITAL:    1000,           // GBP working capital, RESET at each round start
+  ROUND_DAYS:       21,             // trading days per mandate round (~1 month)
+  MIN_ROUND_DAYS:   10,             // a final stub shorter than this is merged into the previous round
+  MAX_LEVERAGE:     5,              // net FX exposure / equity
+  MARGIN_FUT:       0.05,           // fraction of notional
+  MARGIN_SHORTOPT:  0.15,
+  COST_SPOT:        0.0002,
+  COST_FWD:         0.0005,
+  COST_FUT:         0.0003,
+  COST_OPT:         0.02,           // fraction of premium
+  VOL_WINDOW:       21,             // trading days for realised vol
+  EMAIL_CONFIRM:    'no'            // 'yes' to email each student on fill
+};
+
+var SHEETS = {
+  CONFIG:   'Config',
+  PRICES:   'Prices',
+  ROUNDS:   'Rounds',
+  STUDENTS: 'Students',
+  ORDERS:   'Orders',
+  POSITIONS:'Positions',
+  ACCOUNTS: 'Accounts',
+  NAV:      'NAV',
+  ROUNDRES: 'RoundResults',
+  LEADER:   'Leaderboard',
+  LOG:      'Log'
+};
+
+var HEADERS = {
+  Config:      ['key', 'value', 'note'],
+  Prices:      ['date', 'usd', 'eur', 'rg', 'ru', 're', 'vu', 've'],
+  // qty is SIGNED: positive = you OWE that much FC (payable);
+  //                negative = you WILL RECEIVE it (receivable).
+  // capital = GBP working capital issued at the start of THIS round. It must be
+  // big enough that equity stays comfortably positive, or the student cannot
+  // trade at all: a firm with £1,000 cannot owe £1,540.
+  Rounds:      ['round', 'startDate', 'endDate', 'ccy', 'qty', 'kind', 'capital', 'note'],
+  Students:    ['email', 'studentId', 'name', 'joinDate', 'status'],
+  Orders:      ['timestamp', 'email', 'kind', 'ccy', 'dir', 'qty', 'tenor', 'strike',
+                'status', 'fillDate', 'fillPx', 'note'],
+  Positions:   ['posId', 'email', 'round', 'kind', 'ccy', 'qty', 'entry', 'strike',
+                'openDate', 'matIdx', 'lastF', 'status'],
+  Accounts:    ['email', 'round', 'gbpCash', 'usdBal', 'eurBal', 'liabCcy', 'liabQty',
+                'liabMatIdx', 'liabOpen', 'liabCost', 'bust', 'note'],
+  NAV:         ['date', 'round', 'email', 'nav', 'cash', 'exposure', 'marginUsed', 'note'],
+  RoundResults:['round', 'email', 'startDate', 'endDate', 'mandate', 'netWorth', 'change',
+                'volAnn', 'maxDD', 'worstDay', 'hedgeEff', 'trades', 'liabCost', 'status'],
+  Leaderboard: ['rank', 'email', 'name', 'roundsDone', 'avgHedgeEff', 'worstRoundEff',
+                'avgVol', 'avgChange', 'worstDD', 'totalTrades', 'perRound', 'status'],
+  Log:         ['timestamp', 'level', 'message']
+};
+
+// ---------------------------------------------------------------- accessors
+function ss_() { return SpreadsheetApp.getActiveSpreadsheet(); }
+
+function sheet_(name) {
+  var s = ss_().getSheetByName(name);
+  if (!s) throw new Error('Missing sheet "' + name + '". Run BS3555 Game > Set up game first.');
+  return s;
+}
+
+/** Read a whole sheet as an array of objects keyed by its header row. */
+function readSheet_(name) {
+  var s = sheet_(name), vals = s.getDataRange().getValues();
+  if (vals.length < 2) return [];
+  var head = vals[0], out = [];
+  for (var i = 1; i < vals.length; i++) {
+    if (vals[i].join('') === '') continue;
+    var o = { _row: i + 1 };
+    for (var j = 0; j < head.length; j++) o[head[j]] = vals[i][j];
+    out.push(o);
+  }
+  return out;
+}
+
+/** Overwrite a sheet's data rows (header preserved). */
+function writeSheet_(name, rows) {
+  var s = sheet_(name), head = HEADERS[name];
+  s.getRange(2, 1, Math.max(s.getMaxRows() - 1, 1), head.length).clearContent();
+  if (!rows.length) return;
+  var out = rows.map(function (r) {
+    return head.map(function (h) { return (r[h] === undefined || r[h] === null) ? '' : r[h]; });
+  });
+  s.getRange(2, 1, out.length, head.length).setValues(out);
+}
+
+function appendRow_(name, obj) {
+  var head = HEADERS[name];
+  sheet_(name).appendRow(head.map(function (h) {
+    return (obj[h] === undefined || obj[h] === null) ? '' : obj[h];
+  }));
+}
+
+// ---------------------------------------------------------------- config I/O
+var _cfgCache = null;
+function cfg() {
+  if (_cfgCache) return _cfgCache;
+  var rows = readSheet_(SHEETS.CONFIG), o = {};
+  rows.forEach(function (r) {
+    var v = r.value;
+    if (typeof v === 'string' && v !== '' && !isNaN(v)) v = Number(v);
+    o[r.key] = v;
+  });
+  Object.keys(DEFAULTS).forEach(function (k) { if (o[k] === undefined) o[k] = DEFAULTS[k]; });
+  _cfgCache = o;
+  return o;
+}
+
+function ymd_(d) {
+  if (d instanceof Date) return Utilities.formatDate(d, 'Etc/GMT', 'yyyy-MM-dd');
+  return String(d).slice(0, 10);
+}
+
+function log_(level, msg) {
+  try {
+    appendRow_(SHEETS.LOG, {
+      timestamp: new Date(), level: level,
+      message: String(msg).slice(0, 480)
+    });
+  } catch (e) { /* logging must never break the run */ }
+}
+
+
+// ===================================================================
+// ===  01_Pricing.gs
+// ===================================================================
+/**
+ * BS3555 FX Trading Game — pricing engine.
+ *
+ * This is a direct port of BS3555-AI-Lab/assets/fxlib.js so that students are
+ * filled at exactly the prices the lectures and the lab widgets teach.
+ * Convention throughout: S = HOME per FOREIGN (GBP per USD), rates are
+ * EFFECTIVE over the period unless a function says otherwise.
+ */
+
+/** Standard normal CDF — Abramowitz & Stegun 7.1.26, |err| < 7.5e-8. */
+function normCdf(x) {
+  var b1 = 0.319381530, b2 = -0.356563782, b3 = 1.781477937,
+      b4 = -1.821255978, b5 = 1.330274429, p = 0.2316419;
+  var ax = Math.abs(x), t = 1 / (1 + p * ax);
+  var z = Math.exp(-ax * ax / 2) / Math.sqrt(2 * Math.PI);
+  var c = 1 - z * (((((b5 * t + b4) * t) + b3) * t + b2) * t + b1) * t;
+  return x >= 0 ? c : 1 - c;
+}
+
+/** Covered interest parity. r, rstar are EFFECTIVE over the period. */
+function cipForward(S, r, rstar) { return S * (1 + r) / (1 + rstar); }
+
+/**
+ * Garman-Kohlhagen, Sercu discrete-rate form.
+ * sigmaEff = sigma * sqrt(T - t); r, rstar effective over the period.
+ */
+function gk(S, X, r, rstar, sigmaEff) {
+  var F = cipForward(S, r, rstar);
+  if (!(sigmaEff > 0)) {
+    return { F: F, call: Math.max((F - X) / (1 + r), 0),
+             put: Math.max((X - F) / (1 + r), 0), Nd1: NaN, deltaCall: NaN };
+  }
+  var d1 = Math.log(F / X) / sigmaEff + sigmaEff / 2;
+  var d2 = d1 - sigmaEff;
+  var Nd1 = normCdf(d1), Nd2 = normCdf(d2);
+  return {
+    F: F, d1: d1, d2: d2, Nd1: Nd1, Nd2: Nd2,
+    call: S / (1 + rstar) * Nd1 - X / (1 + r) * Nd2,
+    put:  X / (1 + r) * (1 - Nd2) - S / (1 + rstar) * (1 - Nd1),
+    deltaCall: Nd1 / (1 + rstar)
+  };
+}
+
+var TRADING_DAYS = 252;
+function tau_(days) { return days / TRADING_DAYS; }
+
+/** Forward rate for `ccy`, `tenor` trading days ahead, from a Prices row. */
+function fwdFor_(px, ccy, tenor) {
+  var t = tau_(Math.max(tenor, 1));
+  var rf = (ccy === 'usd') ? px.ru : px.re;
+  return cipForward(px[ccy], px.rg * t, rf * t);
+}
+
+/** Option premium (per 1 unit of FC) from a Prices row. */
+function optFor_(px, ccy, kind, strike, tenorLeft) {
+  var t = tau_(Math.max(tenorLeft, 0.5));
+  var rf = (ccy === 'usd') ? px.ru : px.re;
+  var vol = (ccy === 'usd') ? px.vu : px.ve;
+  var g = gk(px[ccy], strike, px.rg * t, rf * t, vol * Math.sqrt(t));
+  return (kind === 'call') ? g.call : g.put;
+}
+
+// ---------------------------------------------------------------- self test
+/**
+ * Verifies the engine against the worked numbers in Lecture 7 / the 2024-25
+ * exam. Run this from the menu after any edit — if it fails, stop and fix.
+ */
+function runSelfTest() {
+  var out = [], ok = true;
+  function check(name, got, want, tol) {
+    var pass = Math.abs(got - want) <= tol;
+    ok = ok && pass;
+    out.push((pass ? 'PASS  ' : 'FAIL  ') + name +
+             '   got ' + got.toFixed(5) + '   want ' + want.toFixed(5));
+  }
+
+  // Lecture 7 / 2024-25 exam Q4: GBP/EUR, S=1.08, X=1.04, 180d, r=1%, r*=0.5% p.a.
+  var S = 1.08, X = 1.04, tt = 0.5, r = 0.01 * tt, rs = 0.005 * tt, sig = 0.07 * Math.sqrt(tt);
+  var F = cipForward(S, r, rs);
+  check('CIP forward (lecture 7)', F, 1.0827, 0.0002);
+
+  var g = gk(S, X, r, rs, sig);
+  check('GK call  (lecture 7)', g.call, 0.0488, 0.0010);
+  check('GK put via parity', g.put, 0.0063, 0.0010);
+  check('put-call parity holds', g.call - g.put - (S / (1 + rs) - X / (1 + r)), 0, 1e-9);
+  check('delta N(d1)/(1+r*)', g.deltaCall, 0.7975, 0.004);
+
+  // Normal CDF anchors
+  check('N(0)', normCdf(0), 0.5, 1e-9);
+  check('N(1.96)', normCdf(1.96), 0.9750, 0.0002);
+  check('N(-0.54)', normCdf(-0.54), 0.2946, 0.0005);
+
+  // Deep in/out of the money limits
+  check('deep ITM call -> S/(1+r*) - X/(1+r)',
+        gk(2.0, 0.5, r, rs, sig).call, 2.0 / (1 + rs) - 0.5 / (1 + r), 1e-6);
+  check('deep OTM call -> 0', gk(0.5, 2.0, r, rs, sig).call, 0, 1e-6);
+
+  var msg = out.join('\n') + '\n\n' + (ok ? 'ALL TESTS PASSED' : '*** SOME TESTS FAILED ***');
+  SpreadsheetApp.getUi().alert('Pricing engine self-test', msg, SpreadsheetApp.getUi().ButtonSet.OK);
+  return ok;
+}
+
+
+// ===================================================================
+// ===  02_Data.gs
+// ===================================================================
+/**
+ * BS3555 FX Trading Game — market data.
+ *
+ * Spot  : ECB daily euro reference rates (published ~16:00 CET the same day).
+ *         GBP per USD = EURGBP / EURUSD ;  GBP per EUR = EURGBP.
+ *         Chosen over FRED because FRED's H.10 FX series lag by several days,
+ *         which would make a "daily" game run stale.
+ * Rates : FRED SONIA / SOFR / EuroSTR, forward-filled onto the FX dates
+ *         (overnight rates barely move day to day, so a small lag is harmless).
+ * Vol   : rolling realised volatility computed from the spot history itself.
+ */
+
+var ECB_90D  = 'https://www.ecb.europa.eu/stats/eurofxref/eurofxref-hist-90d.xml';
+var ECB_FULL = 'https://www.ecb.europa.eu/stats/eurofxref/eurofxref-hist.xml';
+var FRED_CSV = 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=IUDSOIA,SOFR,ECBESTRVOLWGTTRMDMNRT';
+
+/** Pull ECB reference rates. Returns { 'yyyy-mm-dd': {usd, eur}, ... } */
+function fetchEcb_(useFull) {
+  var xml = UrlFetchApp.fetch(useFull ? ECB_FULL : ECB_90D,
+              { muteHttpExceptions: true }).getContentText();
+  var out = {};
+  // Each day is <Cube time="YYYY-MM-DD"> ... <Cube currency="X" rate="Y"/> ... </Cube>
+  var dayRe = /<Cube time="([0-9-]+)">([\s\S]*?)<\/Cube>/g, m;
+  while ((m = dayRe.exec(xml)) !== null) {
+    var date = m[1], body = m[2], usd = null, gbp = null;
+    var cRe = /currency="(\w+)"\s+rate="([\d.]+)"/g, c;
+    while ((c = cRe.exec(body)) !== null) {
+      if (c[1] === 'USD') usd = parseFloat(c[2]);
+      if (c[1] === 'GBP') gbp = parseFloat(c[2]);
+    }
+    if (usd && gbp) out[date] = { usd: gbp / usd, eur: gbp };   // GBP per unit FC
+  }
+  return out;
+}
+
+/** Pull the three overnight rates from FRED. Returns { date: {rg, ru, re} }. */
+function fetchRates_() {
+  var csv = UrlFetchApp.fetch(FRED_CSV, { muteHttpExceptions: true }).getContentText();
+  var lines = csv.split('\n'), out = {};
+  for (var i = 1; i < lines.length; i++) {
+    var p = lines[i].split(',');
+    if (p.length < 4) continue;
+    var d = (p[0] || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
+    out[d] = {
+      rg: p[1] !== '' && p[1] !== '.' ? parseFloat(p[1]) / 100 : null,   // SONIA
+      ru: p[2] !== '' && p[2] !== '.' ? parseFloat(p[2]) / 100 : null,   // SOFR
+      re: p[3] !== '' && p[3] !== '.' ? parseFloat(p[3]) / 100 : null    // EuroSTR
+    };
+  }
+  return out;
+}
+
+/**
+ * Refresh the Prices sheet. Adds any dates not already present, forward-fills
+ * rates, and recomputes realised volatility over the whole series.
+ * Safe to run repeatedly — it never duplicates a date.
+ */
+function updatePrices(useFullHistory) {
+  var c = cfg();
+  var fx = fetchEcb_(!!useFullHistory);
+  var rt = fetchRates_();
+
+  var existing = readSheet_(SHEETS.PRICES);
+  var have = {};
+  existing.forEach(function (r) { have[ymd_(r.date)] = true; });
+
+  var dates = Object.keys(fx).sort();
+  var merged = existing.map(function (r) {
+    return { date: ymd_(r.date), usd: +r.usd, eur: +r.eur,
+             rg: +r.rg, ru: +r.ru, re: +r.re };
+  });
+
+  // carry the last known rate forward across FX dates that FRED has not caught up to
+  var lastR = { rg: null, ru: null, re: null };
+  merged.forEach(function (r) {
+    if (r.rg) lastR.rg = r.rg; if (r.ru) lastR.ru = r.ru; if (r.re) lastR.re = r.re;
+  });
+
+  var added = 0;
+  dates.forEach(function (d) {
+    if (rt[d]) {
+      if (rt[d].rg !== null) lastR.rg = rt[d].rg;
+      if (rt[d].ru !== null) lastR.ru = rt[d].ru;
+      if (rt[d].re !== null) lastR.re = rt[d].re;
+    }
+    if (have[d]) return;
+    merged.push({
+      date: d, usd: fx[d].usd, eur: fx[d].eur,
+      rg: lastR.rg === null ? 0 : lastR.rg,
+      ru: lastR.ru === null ? 0 : lastR.ru,
+      re: lastR.re === null ? 0 : lastR.re
+    });
+    added++;
+  });
+
+  merged.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+  addVol_(merged, 'usd', 'vu', c.VOL_WINDOW);
+  addVol_(merged, 'eur', 've', c.VOL_WINDOW);
+  writeSheet_(SHEETS.PRICES, merged);
+  log_('INFO', 'updatePrices: ' + added + ' new rows, ' + merged.length + ' total, latest ' +
+       (merged.length ? merged[merged.length - 1].date : 'none'));
+  return added;
+}
+
+/** Rolling annualised realised vol of log changes, written to `outKey`. */
+function addVol_(rows, key, outKey, window) {
+  var logs = [null];
+  for (var i = 1; i < rows.length; i++) logs.push(Math.log(rows[i][key] / rows[i - 1][key]));
+  var first = null;
+  for (var i = 0; i < rows.length; i++) {
+    if (i >= window) {
+      var w = logs.slice(i - window + 1, i + 1).filter(function (x) { return x !== null; });
+      var m = w.reduce(function (a, b) { return a + b; }, 0) / w.length;
+      var v = w.reduce(function (a, b) { return a + (b - m) * (b - m); }, 0) / (w.length - 1);
+      rows[i][outKey] = Math.round(Math.sqrt(v * TRADING_DAYS) * 10000) / 10000;
+      if (first === null) first = rows[i][outKey];
+    } else {
+      rows[i][outKey] = null;
+    }
+  }
+  if (first === null) first = 0.08;                       // sane fallback
+  rows.forEach(function (r) { if (r[outKey] === null) r[outKey] = first; });
+}
+
+/** Prices as a plain array, oldest first, with a date -> index map. */
+function loadPrices_() {
+  var rows = readSheet_(SHEETS.PRICES).map(function (r) {
+    return { date: ymd_(r.date), usd: +r.usd, eur: +r.eur,
+             rg: +r.rg, ru: +r.ru, re: +r.re, vu: +r.vu, ve: +r.ve };
+  });
+  rows.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+  var idx = {};
+  rows.forEach(function (r, i) { idx[r.date] = i; });
+  return { rows: rows, idx: idx };
+}
+
+
+// ===================================================================
+// ===  03_Engine.gs
+// ===================================================================
+/**
+ * BS3555 FX Trading Game — the engine (monthly mandate rounds).
+ *
+ * nightlyRun() is the ONLY thing that changes state. It is idempotent and it
+ * catches up automatically if it has not run for several days.
+ *
+ * ROUNDS. The term is divided into monthly mandate rounds (see the Rounds
+ * sheet). Each round is a clean slate: working capital is reset to
+ * START_CAPITAL, all positions from the previous round are closed at market,
+ * and a NEW mandate is issued — sometimes a payable, sometimes a receivable,
+ * in USD or EUR. Rounds are scored separately and the leaderboard averages
+ * them, so one lucky month cannot decide the term.
+ *
+ * Order of operations for each new trading day, which matters:
+ *   0. if today opens a round: close last round, reset capital, issue mandate
+ *   1. accrue interest on yesterday's balances (this is the carry)
+ *   2. mark futures to market on yesterday's positions
+ *   3. settle anything that matured
+ *   4. settle the mandate if it is due (i.e. today closes the round)
+ *   5. fill orders submitted since the last run, at TODAY's close
+ *   6. value the book, check margin, record NAV
+ *
+ * Step 5 comes after 1-4 and uses today's close, so a student can never trade
+ * on a price they have already seen. That is the no-look-ahead rule.
+ */
+
+function nightlyRun() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(60000)) { log_('WARN', 'nightlyRun: another run holds the lock'); return; }
+  try {
+    _cfgCache = null;
+    var c = cfg();
+    updatePrices(false);
+
+    var P = loadPrices_();
+    if (!P.rows.length) { log_('ERROR', 'nightlyRun: no prices'); return; }
+
+    var rounds = loadRounds_(P);
+    if (!rounds.length) { log_('ERROR', 'nightlyRun: no rounds defined — run "Set up game"'); return; }
+
+    ensureAccounts_(rounds);
+    var accounts = loadAccounts_();
+    var positions = loadPositions_();
+    var orders = readSheet_(SHEETS.ORDERS);
+    var roundRes = readSheet_(SHEETS.ROUNDRES);
+
+    var navRows = readSheet_(SHEETS.NAV);
+    var lastDone = '';
+    navRows.forEach(function (n) { var d = ymd_(n.date); if (d > lastDone) lastDone = d; });
+
+    var newNav = [], newRes = [], processed = 0;
+    var firstIdx = rounds[0].startIdx;
+    var lastIdx = rounds[rounds.length - 1].endIdx;
+
+    for (var i = firstIdx; i <= lastIdx && i < P.rows.length; i++) {
+      var px = P.rows[i];
+      if (px.date <= lastDone) continue;
+      if (px.date > ymd_(c.GAME_END)) break;
+      processDay_(c, P, i, rounds, accounts, positions, orders, newNav, newRes);
+      processed++;
+    }
+
+    saveAccounts_(accounts);
+    savePositions_(positions);
+    writeSheet_(SHEETS.ORDERS, orders.map(function (o) {
+      return { timestamp: o.timestamp, email: o.email, kind: o.kind, ccy: o.ccy, dir: o.dir,
+               qty: o.qty, tenor: o.tenor, strike: o.strike, status: o.status,
+               fillDate: o.fillDate || '', fillPx: o.fillPx || '', note: o.note || '' };
+    }));
+    appendRows_(SHEETS.NAV, newNav);
+    appendRows_(SHEETS.ROUNDRES, newRes);
+    rebuildLeaderboard();
+    log_('INFO', 'nightlyRun: ' + processed + ' day(s), ' + newNav.length +
+                 ' NAV rows, ' + newRes.length + ' round results');
+  } catch (e) {
+    log_('ERROR', 'nightlyRun failed: ' + e.message + ' @ ' + (e.stack || '').split('\n')[1]);
+    throw e;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function appendRows_(name, rows) {
+  if (!rows.length) return;
+  var s = sheet_(name), head = HEADERS[name];
+  var out = rows.map(function (r) {
+    return head.map(function (h) { return (r[h] === undefined || r[h] === null) ? '' : r[h]; });
+  });
+  s.getRange(s.getLastRow() + 1, 1, out.length, head.length).setValues(out);
+}
+
+// ---------------------------------------------------------------- rounds
+/** Read the Rounds sheet and resolve dates to price indices. */
+function loadRounds_(P) {
+  var out = [];
+  readSheet_(SHEETS.ROUNDS).forEach(function (r) {
+    var sd = ymd_(r.startDate), ed = ymd_(r.endDate);
+    var si = P.idx[sd], ei = P.idx[ed];
+    if (si === undefined) for (var k = 0; k < P.rows.length; k++)
+      if (P.rows[k].date >= sd) { si = k; break; }
+    if (ei === undefined) for (var k = P.rows.length - 1; k >= 0; k--)
+      if (P.rows[k].date <= ed) { ei = k; break; }
+    if (si === undefined || ei === undefined || ei <= si) return;
+    out.push({ round: +r.round, startIdx: si, endIdx: ei,
+               startDate: P.rows[si].date, endDate: P.rows[ei].date,
+               ccy: String(r.ccy).toLowerCase().trim(), qty: +r.qty,
+               kind: String(r.kind || '').toLowerCase(),
+               capital: +r.capital > 0 ? +r.capital : null, note: r.note || '' });
+  });
+  out.sort(function (a, b) { return a.startIdx - b.startIdx; });
+  return out;
+}
+
+function roundAt_(rounds, i) {
+  for (var k = 0; k < rounds.length; k++)
+    if (i >= rounds[k].startIdx && i <= rounds[k].endIdx) return rounds[k];
+  return null;
+}
+
+/** Build a default schedule across the term, alternating payable / receivable. */
+function generateRounds() {
+  var c = cfg(), P = loadPrices_();
+  var si = P.idx[ymd_(c.GAME_START)];
+  if (si === undefined) for (var k = 0; k < P.rows.length; k++)
+    if (P.rows[k].date >= ymd_(c.GAME_START)) { si = k; break; }
+  var ei = -1;
+  for (var k = P.rows.length - 1; k >= 0; k--)
+    if (P.rows[k].date <= ymd_(c.GAME_END)) { ei = k; break; }
+  if (si === undefined || ei < 0 || ei <= si)
+    throw new Error('GAME_START / GAME_END do not span any trading days in the Prices sheet.');
+
+  // a mandate per round; the pattern repeats if there are more rounds
+  var pattern = [
+    { ccy: 'usd', qty:  1000, note: 'you OWE USD 1,000 — hedge by buying dollars forward' },
+    { ccy: 'eur', qty: -1000, note: 'you will RECEIVE EUR 1,000 — hedge by selling euros forward' },
+    { ccy: 'usd', qty:  1500, note: 'you OWE USD 1,500 — bigger bill, same job' },
+    { ccy: 'eur', qty: -1500, note: 'you will RECEIVE EUR 1,500' }
+  ];
+
+  var rows = [], r = 1, s = si;
+  while (s < ei) {
+    var e = Math.min(s + c.ROUND_DAYS, ei);
+    if (ei - e < c.MIN_ROUND_DAYS) e = ei;          // absorb a short stub
+    var p = pattern[(r - 1) % pattern.length];
+    rows.push({ round: r, startDate: P.rows[s].date, endDate: P.rows[e].date,
+                ccy: p.ccy, qty: p.qty,
+                kind: p.qty > 0 ? 'payable' : 'receivable',
+                capital: capitalFor_(P.rows[s], p.ccy, p.qty), note: p.note });
+    if (e >= ei) break;
+    s = e + 1; r++;
+  }
+  writeSheet_(SHEETS.ROUNDS, rows);
+  return rows.length;
+}
+
+/**
+ * Working capital to issue for a mandate, in GBP.
+ *
+ * A payable REDUCES equity, so the firm must hold more than the bill or it is
+ * insolvent before it starts: capital = 1.3x the bill leaves equity at 0.3x,
+ * which keeps net exposure at about 3.3x equity — inside the 5x limit, and
+ * hedging brings it to zero. A receivable ADDS to equity, so a small float is
+ * enough. Rounded to a tidy number so students see sensible figures.
+ */
+function capitalFor_(px, ccy, qty) {
+  var pv = Math.abs(qty) * px[ccy];
+  var cap = qty > 0 ? 1.3 * pv : 0.3 * pv;
+  return Math.max(50, Math.round(cap / 50) * 50);
+}
+
+// ---------------------------------------------------------------- one day
+function processDay_(c, P, i, rounds, accounts, positions, orders, navOut, resOut) {
+  var px = P.rows[i], prev = P.rows[i - 1] || px;
+  var rd = roundAt_(rounds, i);
+  if (!rd) return;
+
+  Object.keys(accounts).forEach(function (email) {
+    var a = accounts[email];
+
+    // 0. new round opens today
+    if (a.round !== rd.round && i === rd.startIdx) {
+      startRound_(c, P, i, rd, a, positions);
+    }
+    if (a.round !== rd.round) return;              // not in this round yet
+    if (a.bust) return;
+
+    // 1. interest (the carry)
+    if (i > rd.startIdx) {
+      a.gbpCash *= (1 + prev.rg / TRADING_DAYS);
+      a.usdBal  *= (1 + prev.ru / TRADING_DAYS);
+      a.eurBal  *= (1 + prev.re / TRADING_DAYS);
+
+      // 2. futures marked to market in cash
+      positions.forEach(function (p) {
+        if (p.email !== email || p.status !== 'OPEN' || p.kind !== 'fut') return;
+        var fNow = fwdFor_(px, p.ccy, Math.max(p.matIdx - i, 1));
+        a.gbpCash += p.qty * (fNow - p.lastF);
+        p.lastF = fNow;
+      });
+
+      // 3. expiries
+      positions.forEach(function (p) {
+        if (p.email !== email || p.status !== 'OPEN' || i < p.matIdx) return;
+        if (p.kind === 'fwd')       a.gbpCash += p.qty * (px[p.ccy] - p.entry);
+        else if (p.kind === 'call') a.gbpCash += p.qty * Math.max(px[p.ccy] - p.strike, 0);
+        else if (p.kind === 'put')  a.gbpCash += p.qty * Math.max(p.strike - px[p.ccy], 0);
+        p.status = 'EXPIRED';
+      });
+    }
+
+    // 4. the mandate falls due (always on the round's last day)
+    if (a.liabOpen && i >= a.liabMatIdx) settleMandate_(c, px, a);
+  });
+
+  // 5. fill orders submitted since the last close
+  orders.forEach(function (o) {
+    if (o.status !== 'PENDING' && o.status !== '') return;
+    var a = accounts[String(o.email).toLowerCase().trim()];
+    if (!a) { o.status = 'REJECTED'; o.note = 'no account for this email'; return; }
+    if (a.bust) { o.status = 'REJECTED'; o.note = 'account is bust'; return; }
+    var res = fillOrder_(c, P, i, a, positions, o, rd);
+    o.status = res.ok ? 'FILLED' : 'REJECTED';
+    o.fillDate = px.date;
+    o.fillPx = res.px === undefined ? '' : round_(res.px, 6);
+    o.note = res.note;
+  });
+
+  // 6. value, margin-check, record
+  Object.keys(accounts).forEach(function (email) {
+    var a = accounts[email];
+    if (a.round !== rd.round) return;
+    var st = stateOf_(c, P, i, a, positions);
+    if (!a.bust && st.margin > 0 && st.nav < st.margin) {
+      liquidate_(c, P, i, a, positions);
+      a.note = 'LIQUIDATED ' + px.date + ': equity fell below margin owed';
+      st = stateOf_(c, P, i, a, positions);
+    }
+    if (!a.bust && st.nav <= 0) { a.bust = true; a.note = 'BUST ' + px.date; }
+    navOut.push({ date: px.date, round: rd.round, email: email, nav: round_(st.nav, 4),
+                  cash: round_(a.gbpCash, 4), exposure: round_(st.exposure, 2),
+                  marginUsed: round_(st.margin, 2), note: a.bust ? 'bust' : '' });
+  });
+
+  // round closes today -> freeze the result
+  if (i === rd.endIdx) {
+    Object.keys(accounts).forEach(function (email) {
+      var a = accounts[email];
+      if (a.round !== rd.round) return;
+      closeRound_(c, P, i, rd, a, positions, navOut, resOut, orders);
+    });
+  }
+}
+
+// ---------------------------------------------------------------- round edges
+function startRound_(c, P, i, rd, a, positions) {
+  var px = P.rows[i];
+  // anything still open from the previous round is closed at market
+  positions.forEach(function (p) {
+    if (p.email !== a.email || p.status !== 'OPEN') return;
+    a.gbpCash += posValue_(px, i, p);
+    p.status = 'ROLLED';
+  });
+  a.gbpCash += a.usdBal * px.usd + a.eurBal * px.eur;
+  a.usdBal = 0; a.eurBal = 0;
+
+  // clean slate: fresh working capital and a fresh mandate
+  a.round = rd.round;
+  a.gbpCash = (rd.capital && rd.capital > 0) ? rd.capital : c.START_CAPITAL;
+  a.liabCcy = rd.ccy;
+  a.liabQty = rd.qty;                 // signed: + = payable, - = receivable
+  a.liabMatIdx = rd.endIdx;
+  a.liabOpen = true;
+  a.liabCost = null;
+  a.bust = false;
+  a.note = 'round ' + rd.round + ' opened ' + px.date + ': ' + rd.note;
+}
+
+function settleMandate_(c, px, a) {
+  var ccy = a.liabCcy, bal = (ccy === 'usd') ? a.usdBal : a.eurBal;
+  if (a.liabQty > 0) {
+    // payable: deliver liabQty of FC, buying whatever we are short at spot
+    var need = a.liabQty;
+    var have = Math.min(Math.max(bal, 0), need), short = need - have;
+    if (ccy === 'usd') a.usdBal -= have; else a.eurBal -= have;
+    var buy = short * px[ccy] * (1 + c.COST_SPOT);
+    a.gbpCash -= buy;
+    a.liabCost = have * px[ccy] + buy;
+  } else {
+    // receivable: FC arrives; convert it to sterling at spot
+    var amt = -a.liabQty;
+    var proceeds = amt * px[ccy] * (1 - c.COST_SPOT);
+    a.gbpCash += proceeds;
+    a.liabCost = -proceeds;           // negative cost = money in
+  }
+  a.liabOpen = false;
+}
+
+function closeRound_(c, P, i, rd, a, positions, navOut, resOut, orders) {
+  var px = P.rows[i];
+  if (a.liabOpen) settleMandate_(c, px, a);
+  positions.forEach(function (p) {
+    if (p.email !== a.email || p.status !== 'OPEN') return;
+    a.gbpCash += posValue_(px, i, p);
+    p.status = 'CLOSED';
+  });
+  a.gbpCash += a.usdBal * px.usd + a.eurBal * px.eur;
+  a.usdBal = 0; a.eurBal = 0;
+
+  var navs = navOut.filter(function (n) {
+    return n.email === a.email && n.round === rd.round;
+  }).map(function (n) { return { d: n.date, nav: n.nav }; });
+
+  var trades = 0;
+  orders.forEach(function (o) {
+    if (String(o.email).toLowerCase().trim() === a.email &&
+        String(o.status).toUpperCase() === 'FILLED' &&
+        ymd_(o.fillDate) >= rd.startDate && ymd_(o.fillDate) <= rd.endDate) trades++;
+  });
+
+  var m = roundStats_(c, P, rd, navs);
+  resOut.push({
+    round: rd.round, email: a.email, startDate: rd.startDate, endDate: rd.endDate,
+    mandate: (rd.qty > 0 ? 'owe ' : 'receive ') + Math.abs(rd.qty) + ' ' + rd.ccy.toUpperCase(),
+    netWorth: round_(a.gbpCash, 2),
+    change: round_(m.change * 100, 2), volAnn: round_(m.vol * 100, 1),
+    maxDD: round_(m.maxDD * 100, 1), worstDay: round_(m.worst * 100, 2),
+    hedgeEff: m.he === null ? '' : round_(m.he * 100, 0),
+    trades: trades, liabCost: a.liabCost === null ? '' : round_(a.liabCost, 2),
+    status: a.bust ? 'BUST' : 'complete'
+  });
+  a.note = 'round ' + rd.round + ' closed ' + px.date +
+           ' — net worth GBP ' + round_(a.gbpCash, 2);
+}
+
+// ---------------------------------------------------------------- valuation
+function posValue_(px, i, p) {
+  if (p.status !== 'OPEN') return 0;
+  if (p.kind === 'fwd') {
+    var left = Math.max(p.matIdx - i, 1);
+    return p.qty * (fwdFor_(px, p.ccy, left) - p.entry) / (1 + px.rg * tau_(left));
+  }
+  if (p.kind === 'fut') return 0;                       // already settled in cash
+  return p.qty * optFor_(px, p.ccy, p.kind, p.strike, p.matIdx - i);
+}
+
+/**
+ * Value of the outstanding mandate, in GBP, signed so it can be ADDED to assets.
+ * Payable (qty>0)     -> negative (a liability).
+ * Receivable (qty<0)  -> positive (an asset).
+ */
+function liabValue_(px, i, a) {
+  if (!a.liabOpen) return 0;
+  var left = Math.max(a.liabMatIdx - i, 0);
+  var rf = (a.liabCcy === 'usd') ? px.ru : px.re;
+  return -a.liabQty * px[a.liabCcy] / (1 + rf * tau_(left));
+}
+
+/** Net FX exposure by currency — the mandate counts as a position. */
+function exposure_(px, a, positions, extraCcy, extraQty) {
+  var e = { usd: a.usdBal, eur: a.eurBal };
+  positions.forEach(function (p) {
+    if (p.email === a.email && p.status === 'OPEN') e[p.ccy] += p.qty;
+  });
+  if (a.liabOpen) e[a.liabCcy] -= a.liabQty;   // owing FC is short FC
+  if (extraCcy) e[extraCcy] += extraQty;
+  return Math.abs(e.usd) * px.usd + Math.abs(e.eur) * px.eur;
+}
+
+function stateOf_(c, P, i, a, positions) {
+  var px = P.rows[i];
+  var assets = a.gbpCash + a.usdBal * px.usd + a.eurBal * px.eur;
+  positions.forEach(function (p) { if (p.email === a.email) assets += posValue_(px, i, p); });
+  var nav = assets + liabValue_(px, i, a);
+  var margin = 0;
+  positions.forEach(function (p) {
+    if (p.email !== a.email || p.status !== 'OPEN') return;
+    if (p.kind === 'fut') margin += c.MARGIN_FUT * Math.abs(p.qty) * px[p.ccy];
+    else if ((p.kind === 'call' || p.kind === 'put') && p.qty < 0)
+      margin += c.MARGIN_SHORTOPT * Math.abs(p.qty) * px[p.ccy];
+  });
+  return { nav: nav, margin: margin, exposure: exposure_(px, a, positions) };
+}
+
+function liquidate_(c, P, i, a, positions) {
+  var px = P.rows[i];
+  positions.forEach(function (p) {
+    if (p.email !== a.email || p.status !== 'OPEN') return;
+    a.gbpCash += posValue_(px, i, p);
+    p.status = 'LIQUIDATED';
+  });
+  a.gbpCash += a.usdBal * px.usd + a.eurBal * px.eur;
+  a.usdBal = 0; a.eurBal = 0;
+}
+
+/** Per-round stats, benchmarked against the do-nothing treasurer. */
+function roundStats_(c, P, rd, navs) {
+  if (navs.length < 3) return { change: 0, vol: 0, maxDD: 0, worst: 0, he: null };
+  var rets = [], bench = [];
+  for (var k = 1; k < navs.length; k++) {
+    var base = Math.abs(navs[k - 1].nav);
+    if (base > 1e-6) rets.push((navs[k].nav - navs[k - 1].nav) / base);
+    var i0 = P.idx[navs[k - 1].d], i1 = P.idx[navs[k].d];
+    if (i0 === undefined || i1 === undefined) continue;
+    var cap = (rd.capital && rd.capital > 0) ? rd.capital : c.START_CAPITAL;
+    var b0 = cap - rd.qty * P.rows[i0][rd.ccy];
+    var b1 = cap - rd.qty * P.rows[i1][rd.ccy];
+    if (Math.abs(b0) > 1e-9) bench.push((b1 - b0) / Math.abs(b0));
+  }
+  if (rets.length < 2) return { change: 0, vol: 0, maxDD: 0, worst: 0, he: null };
+  var n = rets.length;
+  var mean = rets.reduce(function (x, y) { return x + y; }, 0) / n;
+  var sd = Math.sqrt(rets.reduce(function (x, y) { return x + (y - mean) * (y - mean); }, 0) / (n - 1));
+  var peak = navs[0].nav, dd = 0;
+  navs.forEach(function (p) { peak = Math.max(peak, p.nav); if (peak > 0) dd = Math.min(dd, p.nav / peak - 1); });
+  var he = null;
+  if (bench.length > 2) {
+    var bm = bench.reduce(function (x, y) { return x + y; }, 0) / bench.length;
+    var bsd = Math.sqrt(bench.reduce(function (x, y) { return x + (y - bm) * (y - bm); }, 0) / (bench.length - 1));
+    if (bsd > 0) he = 1 - (sd * sd) / (bsd * bsd);
+  }
+  return { change: navs[0].nav !== 0 ? navs[navs.length - 1].nav / navs[0].nav - 1 : 0,
+           vol: sd * Math.sqrt(TRADING_DAYS), maxDD: dd,
+           worst: Math.min.apply(null, rets), he: he };
+}
+
+// ---------------------------------------------------------------- filling
+function fillOrder_(c, P, i, a, positions, o, rd) {
+  var px = P.rows[i];
+  var kind = String(o.kind).toLowerCase().trim();
+  var ccy = String(o.ccy).toLowerCase().trim();
+  var dir = (String(o.dir).toLowerCase().indexOf('sell') >= 0 ||
+             String(o.dir).indexOf('-') === 0 || +o.dir === -1) ? -1 : 1;
+  var qty = Math.abs(Number(o.qty) || 0) * dir;
+  var tenor = Math.round(Number(o.tenor) || 21);
+
+  if (['spot', 'fwd', 'fut', 'call', 'put'].indexOf(kind) < 0) return { ok: false, note: 'unknown instrument "' + o.kind + '"' };
+  if (['usd', 'eur'].indexOf(ccy) < 0) return { ok: false, note: 'unknown currency "' + o.ccy + '"' };
+  if (!qty) return { ok: false, note: 'size must be greater than zero' };
+
+  // a derivative may not mature after the round closes — everything settles at round end
+  if (kind !== 'spot' && rd) {
+    var maxTenor = rd.endIdx - i;
+    if (maxTenor < 1) return { ok: false, note: 'the round closes today; no new derivatives' };
+    if (tenor > maxTenor) tenor = maxTenor;      // silently shorten to the round end
+  }
+
+  var st = stateOf_(c, P, i, a, positions);
+  var newExp = exposure_(px, a, positions, ccy, qty);
+  if (newExp > c.MAX_LEVERAGE * Math.max(st.nav, 1))
+    return { ok: false, note: 'rejected: net FX exposure would be ' +
+             round_(newExp / Math.max(st.nav, 1), 2) + 'x equity, limit is ' + c.MAX_LEVERAGE + 'x' };
+
+  if (kind === 'spot') {
+    var cost = qty * px[ccy] * (1 + Math.sign(qty) * c.COST_SPOT);
+    if (qty > 0 && a.gbpCash - cost < 0) return { ok: false, note: 'rejected: not enough GBP cash' };
+    a.gbpCash -= cost;
+    if (ccy === 'usd') a.usdBal += qty; else a.eurBal += qty;
+    return { ok: true, px: px[ccy], note: 'spot filled' };
+  }
+
+  if (kind === 'fwd' || kind === 'fut') {
+    var F = fwdFor_(px, ccy, tenor) * (1 + Math.sign(qty) * (kind === 'fwd' ? c.COST_FWD : c.COST_FUT));
+    if (kind === 'fut') {
+      var need = c.MARGIN_FUT * Math.abs(qty) * px[ccy];
+      if (st.nav < st.margin + need) return { ok: false, note: 'rejected: not enough free margin' };
+    }
+    positions.push({ posId: nextPosId_(positions), email: a.email, round: a.round, kind: kind,
+                     ccy: ccy, qty: qty, entry: F, strike: null, openDate: px.date,
+                     matIdx: i + tenor, lastF: (kind === 'fut' ? F : null), status: 'OPEN' });
+    return { ok: true, px: F, note: kind + ' filled at ' + round_(F, 5) +
+                                    ' for ' + tenor + ' trading days' };
+  }
+
+  var X = Number(o.strike);
+  if (!X || X <= 0) X = Math.round(px[ccy] * 1000) / 1000;          // default: at the money
+  var prem = optFor_(px, ccy, kind, X, tenor);
+  var paid = qty * prem * (1 + Math.sign(qty) * c.COST_OPT);
+  if (qty > 0 && a.gbpCash < paid) return { ok: false, note: 'rejected: not enough cash for the premium' };
+  if (qty < 0) {
+    var m = c.MARGIN_SHORTOPT * Math.abs(qty) * px[ccy];
+    if (st.nav < st.margin + m) return { ok: false, note: 'rejected: not enough margin to write this option' };
+  }
+  a.gbpCash -= paid;
+  positions.push({ posId: nextPosId_(positions), email: a.email, round: a.round, kind: kind,
+                   ccy: ccy, qty: qty, entry: prem, strike: X, openDate: px.date,
+                   matIdx: i + tenor, lastF: null, status: 'OPEN' });
+  return { ok: true, px: prem, note: kind + ' @' + round_(X, 4) + ' premium ' + round_(prem, 5) };
+}
+
+function nextPosId_(positions) {
+  var m = 0;
+  positions.forEach(function (p) { var n = parseInt(String(p.posId).replace(/\D/g, ''), 10); if (n > m) m = n; });
+  return 'P' + (m + 1);
+}
+function round_(x, n) { var f = Math.pow(10, n); return Math.round(x * f) / f; }
+
+// ---------------------------------------------------------------- persistence
+function loadPositions_() {
+  return readSheet_(SHEETS.POSITIONS).map(function (p) {
+    return { posId: p.posId, email: String(p.email).toLowerCase().trim(), round: +p.round,
+             kind: p.kind, ccy: p.ccy, qty: +p.qty, entry: +p.entry,
+             strike: p.strike === '' ? null : +p.strike, openDate: ymd_(p.openDate),
+             matIdx: +p.matIdx, lastF: p.lastF === '' ? null : +p.lastF, status: p.status };
+  });
+}
+function savePositions_(positions) {
+  writeSheet_(SHEETS.POSITIONS, positions.map(function (p) {
+    return { posId: p.posId, email: p.email, round: p.round, kind: p.kind, ccy: p.ccy,
+             qty: p.qty, entry: round_(p.entry, 6),
+             strike: p.strike === null ? '' : round_(p.strike, 6), openDate: p.openDate,
+             matIdx: p.matIdx, lastF: p.lastF === null ? '' : round_(p.lastF, 6),
+             status: p.status };
+  }));
+}
+
+function ensureAccounts_(rounds) {
+  var c = cfg();
+  var students = readSheet_(SHEETS.STUDENTS);
+  var accounts = readSheet_(SHEETS.ACCOUNTS);
+  var have = {};
+  accounts.forEach(function (a) { have[String(a.email).toLowerCase().trim()] = true; });
+
+  students.forEach(function (s) {
+    var email = String(s.email).toLowerCase().trim();
+    if (!email || have[email]) return;
+    if (String(s.status).toLowerCase() === 'inactive') return;
+    appendRow_(SHEETS.ACCOUNTS, {
+      email: email, round: 0, gbpCash: c.START_CAPITAL, usdBal: 0, eurBal: 0,
+      liabCcy: '', liabQty: 0, liabMatIdx: 0, liabOpen: 'FALSE', liabCost: '',
+      bust: 'FALSE', note: 'created — awaiting first round'
+    });
+  });
+}
+
+function loadAccounts_() {
+  var out = {};
+  readSheet_(SHEETS.ACCOUNTS).forEach(function (a) {
+    var email = String(a.email).toLowerCase().trim();
+    if (!email) return;
+    out[email] = {
+      email: email, round: +a.round || 0,
+      gbpCash: +a.gbpCash, usdBal: +a.usdBal, eurBal: +a.eurBal,
+      liabCcy: String(a.liabCcy || '').toLowerCase(), liabQty: +a.liabQty || 0,
+      liabMatIdx: +a.liabMatIdx || 0,
+      liabOpen: String(a.liabOpen).toUpperCase() === 'TRUE',
+      liabCost: a.liabCost === '' ? null : +a.liabCost,
+      bust: String(a.bust).toUpperCase() === 'TRUE',
+      note: a.note || ''
+    };
+  });
+  return out;
+}
+
+function saveAccounts_(accounts) {
+  writeSheet_(SHEETS.ACCOUNTS, Object.keys(accounts).map(function (k) {
+    var a = accounts[k];
+    return { email: a.email, round: a.round, gbpCash: round_(a.gbpCash, 4),
+             usdBal: round_(a.usdBal, 4), eurBal: round_(a.eurBal, 4),
+             liabCcy: a.liabCcy, liabQty: a.liabQty, liabMatIdx: a.liabMatIdx,
+             liabOpen: a.liabOpen ? 'TRUE' : 'FALSE',
+             liabCost: a.liabCost === null ? '' : round_(a.liabCost, 2),
+             bust: a.bust ? 'TRUE' : 'FALSE', note: a.note };
+  }));
+}
+
+
+// ===================================================================
+// ===  04_Metrics.gs
+// ===================================================================
+/**
+ * BS3555 FX Trading Game — leaderboard across monthly mandate rounds.
+ *
+ * Per-round metrics are frozen by the engine into RoundResults when each round
+ * closes. This file only AGGREGATES them.
+ *
+ * Ranking is on AVERAGE HEDGE EFFECTIVENESS across completed rounds, not on
+ * profit. Two deliberate choices:
+ *   - averaging across rounds stops one lucky month deciding the term;
+ *   - the tie-break is the WORST round, which rewards consistency over a
+ *     single spectacular month.
+ */
+
+function rebuildLeaderboard() {
+  var results = readSheet_(SHEETS.ROUNDRES);
+  var students = {};
+  readSheet_(SHEETS.STUDENTS).forEach(function (s) {
+    students[String(s.email).toLowerCase().trim()] = s.name || s.studentId || '';
+  });
+  var accounts = loadAccounts_();
+
+  var by = {};
+  results.forEach(function (r) {
+    var e = String(r.email).toLowerCase().trim();
+    if (!by[e]) by[e] = [];
+    by[e].push({
+      round: +r.round,
+      he: r.hedgeEff === '' ? null : +r.hedgeEff,
+      vol: +r.volAnn, change: +r.change, dd: +r.maxDD,
+      trades: +r.trades, bust: String(r.status).toUpperCase() === 'BUST'
+    });
+  });
+
+  // students with an account but no completed round yet still deserve a row
+  Object.keys(accounts).forEach(function (e) { if (!by[e]) by[e] = []; });
+
+  var rows = Object.keys(by).map(function (email) {
+    var rs = by[email].slice().sort(function (x, y) { return x.round - y.round; });
+    var withHe = rs.filter(function (r) { return r.he !== null; });
+    var mean = function (arr, f) {
+      return arr.length ? arr.reduce(function (a, b) { return a + f(b); }, 0) / arr.length : null;
+    };
+    var avgHe = mean(withHe, function (r) { return r.he; });
+    var worstHe = withHe.length ? Math.min.apply(null, withHe.map(function (r) { return r.he; })) : null;
+    var a = accounts[email];
+
+    return {
+      email: email,
+      name: students[email] || '',
+      roundsDone: rs.length,
+      avgHedgeEff: avgHe === null ? '' : round_(avgHe, 0),
+      worstRoundEff: worstHe === null ? '' : round_(worstHe, 0),
+      avgVol: rs.length ? round_(mean(rs, function (r) { return r.vol; }), 1) : '',
+      avgChange: rs.length ? round_(mean(rs, function (r) { return r.change; }), 2) : '',
+      worstDD: rs.length ? round_(Math.min.apply(null, rs.map(function (r) { return r.dd; })), 1) : '',
+      totalTrades: rs.reduce(function (a2, b) { return a2 + b.trades; }, 0),
+      perRound: rs.map(function (r) {
+        return 'R' + r.round + ':' + (r.he === null ? '—' : r.he + '%') + (r.bust ? '(bust)' : '');
+      }).join('  '),
+      status: rs.some(function (r) { return r.bust; }) ? 'bust in a round'
+              : (a && a.round ? 'round ' + a.round + ' live' : 'not started'),
+      _avg: avgHe === null ? -999 : avgHe,
+      _worst: worstHe === null ? -999 : worstHe
+    };
+  });
+
+  rows.sort(function (x, y) {
+    if (y._avg !== x._avg) return y._avg - x._avg;      // average first
+    return y._worst - x._worst;                          // then consistency
+  });
+  rows.forEach(function (r, i) { r.rank = i + 1; delete r._avg; delete r._worst; });
+
+  writeSheet_(SHEETS.LEADER, rows);
+  return rows.length;
+}
+
+/** One row per student per round, plus the aggregate, for marking. */
+function exportForMarking() {
+  var res = readSheet_(SHEETS.ROUNDRES);
+  var lead = readSheet_(SHEETS.LEADER);
+
+  var out = [['--- PER ROUND ---'],
+             ['round', 'email', 'mandate', 'startDate', 'endDate', 'netWorth', 'change%',
+              'vol%', 'maxDD%', 'worstDay%', 'hedgeEff%', 'trades', 'mandateCost', 'status']];
+  res.forEach(function (r) {
+    out.push([r.round, r.email, r.mandate, ymd_(r.startDate), ymd_(r.endDate), r.netWorth,
+              r.change, r.volAnn, r.maxDD, r.worstDay, r.hedgeEff, r.trades, r.liabCost, r.status]);
+  });
+  out.push([]);
+  out.push(['--- TERM AGGREGATE (leaderboard order) ---']);
+  out.push(['rank', 'email', 'name', 'roundsDone', 'avgHedgeEff%', 'worstRoundEff%',
+            'avgVol%', 'avgChange%', 'worstDD%', 'totalTrades', 'perRound', 'status']);
+  lead.forEach(function (r) {
+    out.push([r.rank, r.email, r.name, r.roundsDone, r.avgHedgeEff, r.worstRoundEff,
+              r.avgVol, r.avgChange, r.worstDD, r.totalTrades, r.perRound, r.status]);
+  });
+
+  var csv = out.map(function (r) {
+    return r.map(function (cell) {
+      var s = (cell === undefined || cell === null) ? '' : String(cell);
+      return /[",]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    }).join(',');
+  }).join('\n');
+
+  var file = DriveApp.createFile('BS3555_trading_results_' +
+               Utilities.formatDate(new Date(), 'Etc/GMT', 'yyyyMMdd') + '.csv', csv, MimeType.CSV);
+  SpreadsheetApp.getUi().alert('Exported',
+    'Saved to your Drive:\n' + file.getName() + '\n\n' +
+    res.length + ' round results, ' + lead.length + ' students.',
+    SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+
+// ===================================================================
+// ===  05_Setup.gs
+// ===================================================================
+/**
+ * BS3555 FX Trading Game — one-click setup, menu and triggers.
+ *
+ * Run "BS3555 Game > 1. Set up game" once. Everything else is menu-driven.
+ */
+
+function onOpen() {
+  SpreadsheetApp.getUi().createMenu('BS3555 Game')
+    .addItem('1. Set up game (safe to re-run)', 'setupGame')
+    .addItem('2. Create the trade-entry form', 'createTradeForm')
+    .addItem('3. Install nightly trigger', 'installTrigger')
+    .addSeparator()
+    .addItem('Regenerate round schedule', 'menuGenerateRounds')
+    .addItem('Run pricing self-test', 'runSelfTest')
+    .addItem('Refresh prices now', 'menuUpdatePrices')
+    .addItem('Run nightly job now', 'nightlyRun')
+    .addItem('Rebuild leaderboard', 'rebuildLeaderboard')
+    .addSeparator()
+    .addItem('Seed 3 demo students + test trades', 'seedDemo')
+    .addItem('Export results for marking (CSV)', 'exportForMarking')
+    .addItem('Reset game state (keeps prices + students)', 'resetGameState')
+    .addToUi();
+}
+
+function setupGame() {
+  var ss = ss_();
+  Object.keys(HEADERS).forEach(function (name) {
+    var s = ss.getSheetByName(name);
+    if (!s) s = ss.insertSheet(name);
+    var head = HEADERS[name];
+    s.getRange(1, 1, 1, head.length).setValues([head])
+      .setFontWeight('bold').setBackground('#8A1538').setFontColor('#FFFFFF');
+    s.setFrozenRows(1);
+    if (s.getMaxColumns() > head.length) s.deleteColumns(head.length + 1, s.getMaxColumns() - head.length);
+  });
+
+  // seed Config only if empty
+  var cs = ss.getSheetByName(SHEETS.CONFIG);
+  if (cs.getLastRow() < 2) {
+    var notes = {
+      GAME_START: 'first trading day of the game (yyyy-mm-dd)',
+      GAME_END: 'last trading day',
+      START_CAPITAL: 'GBP working capital — RESET to this at the start of every round',
+      ROUND_DAYS: 'trading days per mandate round (21 ~ one month)',
+      MIN_ROUND_DAYS: 'a final stub shorter than this is merged into the previous round',
+      MAX_LEVERAGE: 'net FX exposure / equity. Hedging REDUCES exposure',
+      MARGIN_FUT: 'futures margin, fraction of notional',
+      MARGIN_SHORTOPT: 'written-option margin, fraction of notional',
+      COST_SPOT: 'transaction cost, fraction', COST_FWD: '', COST_FUT: '',
+      COST_OPT: 'fraction of the premium',
+      VOL_WINDOW: 'trading days for realised vol',
+      EMAIL_CONFIRM: 'yes / no — email each student when an order is processed'
+    };
+    var rows = Object.keys(DEFAULTS).map(function (k) {
+      return [k, DEFAULTS[k], notes[k] || ''];
+    });
+    cs.getRange(2, 1, rows.length, 3).setValues(rows);
+  }
+
+  var ls = ss.getSheetByName(SHEETS.LEADER);
+  ls.getRange('A1').setNote('Ranked on AVERAGE hedge effectiveness across rounds, ' +
+    'tie-broken on the worst round — see TRADING_GAME_DESIGN.md');
+
+  _cfgCache = null;
+  var added = updatePrices(true);          // full history first time, for the vol window
+
+  var nRounds = 0, roundMsg = '';
+  try {
+    if (sheet_(SHEETS.ROUNDS).getLastRow() < 2) nRounds = generateRounds();
+    else nRounds = readSheet_(SHEETS.ROUNDS).length;
+    roundMsg = nRounds + ' mandate round(s) scheduled.';
+  } catch (e) {
+    roundMsg = 'Rounds NOT generated: ' + e.message +
+               '\nSet GAME_START / GAME_END in Config, then use "Regenerate round schedule".';
+  }
+
+  SpreadsheetApp.getUi().alert('Set up complete',
+    'Sheets created and ' + added + ' price rows loaded.\n' + roundMsg + '\n\n' +
+    'Next:\n' +
+    '  2. Create the trade-entry form\n' +
+    '  3. Install nightly trigger\n\n' +
+    'Then paste your students into the Students sheet (email, studentId, name).\n\n' +
+    'Check the Rounds sheet — you can edit the currency, size and payable/receivable ' +
+    'of any round by hand before it starts.',
+    SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+function menuGenerateRounds() {
+  var ui = SpreadsheetApp.getUi();
+  if (readSheet_(SHEETS.ROUNDRES).length) {
+    var r = ui.alert('Rounds already played',
+      'RoundResults already contains completed rounds. Regenerating the schedule now ' +
+      'will make those results inconsistent with it.\n\nContinue anyway?', ui.ButtonSet.YES_NO);
+    if (r !== ui.Button.YES) return;
+  }
+  try {
+    var n = generateRounds();
+    var rows = readSheet_(SHEETS.ROUNDS);
+    var txt = rows.map(function (x) {
+      return '  R' + x.round + '  ' + ymd_(x.startDate) + ' to ' + ymd_(x.endDate) +
+             '   ' + (x.qty > 0 ? 'owe ' : 'receive ') + Math.abs(x.qty) + ' ' +
+             String(x.ccy).toUpperCase();
+    }).join('\n');
+    ui.alert('Round schedule', n + ' rounds:\n\n' + txt +
+      '\n\nEdit the Rounds sheet directly to change any mandate before it starts.',
+      ui.ButtonSet.OK);
+  } catch (e) {
+    ui.alert('Could not generate rounds', e.message, ui.ButtonSet.OK);
+  }
+}
+
+function menuUpdatePrices() {
+  var n = updatePrices(false);
+  var P = loadPrices_();
+  SpreadsheetApp.getUi().alert('Prices refreshed',
+    n + ' new row(s).\nLatest: ' + (P.rows.length ? P.rows[P.rows.length - 1].date : 'none'),
+    SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+/**
+ * Creates the trade-entry Google Form and links its responses into this sheet.
+ * Responses land in a new sheet; a trigger copies them into Orders as PENDING.
+ */
+function createTradeForm() {
+  var ss = ss_();
+  var form = FormApp.create('BS3555 FX Trading Game — trade ticket');
+  form.setDescription(
+    'Submit one trade per response. Orders are filled at the NEXT published closing price, ' +
+    'so you can never trade on a price you have already seen.\n\n' +
+    'Your mandate: your firm owes USD 1,000 in three months. Make the cost certain.')
+    .setCollectEmail(true)
+    .setLimitOneResponsePerUser(false)
+    .setAllowResponseEdits(false);
+
+  form.addListItem().setTitle('Instrument').setRequired(true)
+    .setChoiceValues(['spot', 'fwd', 'fut', 'call', 'put']);
+  form.addListItem().setTitle('Currency').setRequired(true).setChoiceValues(['usd', 'eur']);
+  form.addListItem().setTitle('Direction').setRequired(true)
+    .setChoiceValues(['buy / long', 'sell / short']);
+  form.addTextItem().setTitle('Size (units of foreign currency)').setRequired(true);
+  form.addListItem().setTitle('Maturity (trading days) — ignored for spot')
+    .setChoiceValues(['21', '63', '126']);
+  form.addTextItem().setTitle('Strike (GBP per FC) — options only, blank = at the money');
+  form.addParagraphTextItem().setTitle('Why this trade? (one or two sentences — this feeds your report)');
+
+  form.setDestination(FormApp.DestinationType.SPREADSHEET, ss.getId());
+
+  ScriptApp.newTrigger('onTradeFormSubmit').forSpreadsheet(ss).onFormSubmit().create();
+
+  SpreadsheetApp.getUi().alert('Form created',
+    'Share this link with students:\n\n' + form.getPublishedUrl() +
+    '\n\nEdit it here:\n' + form.getEditUrl(),
+    SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+/** Copies a form response into Orders as PENDING. No pricing happens here. */
+function onTradeFormSubmit(e) {
+  try {
+    var v = e.namedValues || {};
+    function g(label) {
+      for (var k in v) if (k.toLowerCase().indexOf(label) === 0) return String(v[k][0] || '').trim();
+      return '';
+    }
+    var email = (v['Email Address'] ? v['Email Address'][0] : '') ||
+                (e.response && e.response.getRespondentEmail ? e.response.getRespondentEmail() : '');
+    appendRow_(SHEETS.ORDERS, {
+      timestamp: new Date(),
+      email: String(email).toLowerCase().trim(),
+      kind: g('instrument'),
+      ccy: g('currency'),
+      dir: g('direction'),
+      qty: g('size'),
+      tenor: g('maturity') || 63,
+      strike: g('strike'),
+      status: 'PENDING',
+      note: g('why this trade').slice(0, 200)
+    });
+  } catch (err) {
+    log_('ERROR', 'onTradeFormSubmit: ' + err.message);
+  }
+}
+
+function installTrigger() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'nightlyRun') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('nightlyRun').timeBased().atHour(19).everyDays(1)
+    .inTimezone('Europe/London').create();
+  SpreadsheetApp.getUi().alert('Trigger installed',
+    'nightlyRun will execute daily at about 19:00 London time.\n\n' +
+    'ECB publishes its reference rates around 16:00 CET, so by 19:00 London the ' +
+    'closing price for the day is available.',
+    SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+// ---------------------------------------------------------------- demo / reset
+function seedDemo() {
+  var c = cfg();
+  var demo = [
+    ['hedger@example.com',    'S001', 'Demo — full forward hedge'],
+    ['optioneer@example.com', 'S002', 'Demo — ATM call'],
+    ['halfandhalf@example.com','S003','Demo — 50/50 forward + call'],
+    ['unhedged@example.com',  'S004', 'Demo — did nothing']
+  ];
+  demo.forEach(function (d) {
+    appendRow_(SHEETS.STUDENTS, { email: d[0], studentId: d[1], name: d[2],
+                                  joinDate: ymd_(new Date()), status: 'active' });
+  });
+  // One order per round, matching that round's mandate. A payable is hedged by
+  // BUYING the currency forward; a receivable by SELLING it.
+  var rounds = readSheet_(SHEETS.ROUNDS);
+  rounds.forEach(function (rd) {
+    var qty = Math.abs(+rd.qty), ccy = String(rd.ccy).toLowerCase();
+    var dir = (+rd.qty > 0) ? 'buy / long' : 'sell / short';
+    var optKind = (+rd.qty > 0) ? 'call' : 'put';     // payable -> call, receivable -> put
+    var tenor = 999;                                   // engine shortens this to the round end
+    function order(email, kind, q, note) {
+      appendRow_(SHEETS.ORDERS, { timestamp: new Date(), email: email, kind: kind, ccy: ccy,
+        dir: dir, qty: q, tenor: tenor, strike: '', status: 'PENDING',
+        note: 'R' + rd.round + ' ' + note });
+    }
+    order('hedger@example.com',      'fwd',   qty,     'full forward hedge');
+    order('optioneer@example.com',   optKind, qty,     'ATM option: cap the cost, keep the upside');
+    order('halfandhalf@example.com', 'fwd',   qty / 2, 'half forward');
+    order('halfandhalf@example.com', optKind, qty / 2, 'half option');
+    // "unhedged" deliberately places no order — an untouched mandate IS the gamble.
+  });
+
+  SpreadsheetApp.getUi().alert('Demo seeded',
+    'Four students added, covering the four strategies, with orders for each of the ' +
+    rounds.length + ' scheduled round(s).\n\n' +
+    'IMPORTANT: set GAME_START / GAME_END in Config to dates in the PAST, then ' +
+    '"Regenerate round schedule", then "Run nightly job now". Otherwise there are ' +
+    'no trading days to process yet.\n\n' +
+    'Expected per round (verified against real 2025 prices):\n' +
+    '  full forward hedge  ~100% hedge eff,  ~0% vol\n' +
+    '  50/50               ~88%\n' +
+    '  ATM option          ~52%\n' +
+    '  did nothing         ~10%   <- usually the best profit, the worst treasurer\n\n' +
+    'The Leaderboard averages hedge effectiveness across rounds and tie-breaks on ' +
+    'the worst round, so consistency beats one lucky month.',
+    SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+function resetGameState() {
+  var ui = SpreadsheetApp.getUi();
+  var r = ui.alert('Reset game state?',
+    'This clears Orders, Positions, Accounts, NAV, RoundResults, Leaderboard and Log.\n' +
+    'Prices, Rounds and Students are kept. This cannot be undone.',
+    ui.ButtonSet.YES_NO);
+  if (r !== ui.Button.YES) return;
+  [SHEETS.ORDERS, SHEETS.POSITIONS, SHEETS.ACCOUNTS, SHEETS.NAV, SHEETS.ROUNDRES,
+   SHEETS.LEADER, SHEETS.LOG].forEach(function (n) { writeSheet_(n, []); });
+  ui.alert('Reset done', 'Run the nightly job to rebuild from the start date.', ui.ButtonSet.OK);
+}
+
+
+// ===================================================================
+// ===  06_WebApp.gs
+// ===================================================================
+/**
+ * BS3555 FX Trading Game — student dashboard (read-only).
+ *
+ * Deploy: Extensions > Apps Script > Deploy > New deployment > Web app
+ *   Execute as : Me
+ *   Access     : Anyone within Cardiff University
+ * Students open the URL, are identified by their Google login, and see only
+ * their own book plus the shared leaderboard.
+ */
+
+function doGet() {
+  return HtmlService.createHtmlOutputFromFile('Dashboard')
+    .setTitle('BS3555 FX Trading Game')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
+/** Everything the dashboard needs, for the signed-in student only. */
+function getMyState() {
+  var email = String(Session.getActiveUser().getEmail() || '').toLowerCase().trim();
+  var c = cfg(), P = loadPrices_();
+  var latest = P.rows.length ? P.rows[P.rows.length - 1] : null;
+
+  var out = {
+    email: email,
+    latestDate: latest ? latest.date : '',
+    spot: latest ? { usd: latest.usd, eur: latest.eur, vu: latest.vu, ve: latest.ve } : null,
+    gameStart: ymd_(c.GAME_START), gameEnd: ymd_(c.GAME_END),
+    found: false, mandate: null, account: null,
+    positions: [], orders: [], nav: [], leaderboard: [], myRank: null
+  };
+  if (!email) { out.error = 'Could not read your Google identity. Sign in with your Cardiff account.'; return out; }
+
+  var accounts = loadAccounts_();
+  var a = accounts[email];
+
+  // leaderboard is shared, but we only show names + metrics (no positions)
+  out.leaderboard = readSheet_(SHEETS.LEADER).slice(0, 200).map(function (r) {
+    return { rank: r.rank, name: r.name || '(unnamed)', isMe: String(r.email).toLowerCase() === email,
+             avgHedgeEff: r.avgHedgeEff, worstRoundEff: r.worstRoundEff, roundsDone: r.roundsDone,
+             avgVol: r.avgVol, avgChange: r.avgChange, perRound: r.perRound, status: r.status };
+  });
+  out.leaderboard.forEach(function (r) { if (r.isMe) out.myRank = r.rank; });
+
+  // my completed rounds
+  out.rounds = readSheet_(SHEETS.ROUNDRES).filter(function (r) {
+    return String(r.email).toLowerCase() === email;
+  }).map(function (r) {
+    return { round: r.round, mandate: r.mandate, start: ymd_(r.startDate), end: ymd_(r.endDate),
+             netWorth: r.netWorth, change: r.change, vol: r.volAnn, maxDD: r.maxDD,
+             hedgeEff: r.hedgeEff, trades: r.trades, cost: r.liabCost, status: r.status };
+  }).sort(function (x, y) { return x.round - y.round; });
+
+  // the whole schedule, so students can see what is coming
+  out.schedule = readSheet_(SHEETS.ROUNDS).map(function (r) {
+    return { round: +r.round, start: ymd_(r.startDate), end: ymd_(r.endDate),
+             mandate: (+r.qty > 0 ? 'owe ' : 'receive ') + Math.abs(+r.qty) + ' ' +
+                      String(r.ccy).toUpperCase(), note: r.note || '' };
+  });
+
+  if (!a) { out.error = 'No account yet. Ask your lecturer to add ' + email + ' to the Students sheet.'; return out; }
+  out.found = true;
+
+  var i = P.rows.length - 1;
+  var st = stateOf_(c, P, i, a, []);   // positions added below
+  var positions = readSheet_(SHEETS.POSITIONS).filter(function (p) {
+    return String(p.email).toLowerCase() === email;
+  }).map(function (p) {
+    return { posId: p.posId, kind: p.kind, ccy: p.ccy, qty: +p.qty, entry: +p.entry,
+             strike: p.strike === '' ? null : +p.strike, openDate: ymd_(p.openDate),
+             matIdx: +p.matIdx, lastF: p.lastF === '' ? null : +p.lastF, status: p.status,
+             email: email };
+  });
+  var full = stateOf_(c, P, i, a, positions);
+
+  out.account = { round: a.round, cash: round_(a.gbpCash, 2), usd: round_(a.usdBal, 2),
+                  eur: round_(a.eurBal, 2), nav: round_(full.nav, 2),
+                  exposure: round_(full.exposure, 2), margin: round_(full.margin, 2),
+                  bust: a.bust, note: a.note };
+  out.mandate = a.liabCcy ? {
+    round: a.round,
+    qty: Math.abs(a.liabQty), ccy: a.liabCcy.toUpperCase(),
+    isPayable: a.liabQty > 0, open: a.liabOpen,
+    daysLeft: Math.max(a.liabMatIdx - i, 0),
+    cost: a.liabCost,
+    value: round_(liabValue_(P.rows[i], i, a), 2),
+    lockNow: latest ? round_(fwdFor_(latest, a.liabCcy,
+               Math.max(a.liabMatIdx - i, 1)) * Math.abs(a.liabQty), 2) : null
+  } : null;
+
+  out.positions = positions.filter(function (p) { return p.status === 'OPEN'; }).map(function (p) {
+    return { posId: p.posId, kind: p.kind, ccy: p.ccy.toUpperCase(), qty: p.qty,
+             entry: round_(p.entry, 5), strike: p.strike ? round_(p.strike, 4) : '',
+             daysLeft: Math.max(p.matIdx - i, 0), value: round_(posValue_(P.rows[i], i, p), 2) };
+  });
+
+  out.orders = readSheet_(SHEETS.ORDERS).filter(function (o) {
+    return String(o.email).toLowerCase() === email;
+  }).slice(-15).reverse().map(function (o) {
+    return { when: ymd_(o.timestamp), kind: o.kind, ccy: o.ccy, dir: o.dir, qty: o.qty,
+             status: o.status, fillDate: o.fillDate ? ymd_(o.fillDate) : '',
+             fillPx: o.fillPx, note: o.note };
+  });
+
+  out.nav = readSheet_(SHEETS.NAV).filter(function (n) {
+    return String(n.email).toLowerCase() === email;
+  }).map(function (n) { return { d: ymd_(n.date), v: +n.nav }; });
+
+  return out;
+}
+
+

@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<style>
+  :root { --brand:#8A1538; --steel:#275D8C; --gold:#B98A2C; --muted:#5E6A75; --line:#E6E6E6; }
+  * { box-sizing:border-box; }
+  body { font-family:"Segoe UI",system-ui,-apple-system,sans-serif; color:#1F1F1F;
+         margin:0; background:#FAFAFA; }
+  .wrap { max-width:980px; margin:0 auto; padding:18px; }
+  header { background:var(--brand); color:#fff; padding:18px 0; }
+  header .wrap { padding-top:0; padding-bottom:0; }
+  header h1 { margin:0; font-size:1.35rem; }
+  header p { margin:.25rem 0 0; opacity:.85; font-size:.9rem; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:8px; padding:14px 16px; margin:14px 0; }
+  h2 { font-size:1rem; margin:0 0 10px; color:var(--brand); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:10px; }
+  .kpi { background:#F7F7F9; border-radius:6px; padding:8px 10px; text-align:center; }
+  .kpi small { display:block; color:var(--muted); font-size:.72rem; }
+  .kpi b { font-size:1.05rem; }
+  table { width:100%; border-collapse:collapse; font-size:.86rem; }
+  th { text-align:left; color:var(--muted); font-weight:600; border-bottom:2px solid var(--line); padding:6px 4px; }
+  td { padding:6px 4px; border-bottom:1px solid #F0F0F0; }
+  tr.me { background:#FBF3F5; font-weight:600; }
+  .mand { background:#EDF3F8; border-left:3px solid var(--steel); padding:10px 12px; border-radius:4px; font-size:.9rem; }
+  .err  { background:#FBE9EA; border-left:3px solid #B2182B; padding:10px 12px; border-radius:4px; font-size:.9rem; }
+  .ok { color:#1B7837; } .bad { color:#B2182B; }
+  .muted { color:var(--muted); font-size:.82rem; }
+  #spark { width:100%; height:120px; }
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <h1>BS3555 FX Trading Game</h1>
+  <p>Your mandate, your book, your risk numbers.</p>
+</div></header>
+
+<div class="wrap">
+  <div id="loading" class="card">Loading your book…</div>
+  <div id="app" style="display:none;">
+    <div id="msg"></div>
+
+    <div class="card">
+      <h2>This round's mandate</h2>
+      <div id="mandate"></div>
+      <table id="sched" style="margin-top:10px;"></table>
+    </div>
+
+    <div class="card">
+      <h2>Your completed rounds</h2>
+      <table id="rounds"></table>
+      <p class="muted" style="margin-top:8px;">Each round is a clean slate: fresh working capital,
+        a new mandate, positions from the previous round closed out. Your term score is the
+        <b>average</b> hedge effectiveness across rounds, so one lucky month cannot carry you and
+        one bad month cannot sink you.</p>
+    </div>
+
+    <div class="card">
+      <h2>Position summary</h2>
+      <div class="grid" id="kpis"></div>
+      <canvas id="spark" style="margin-top:12px;"></canvas>
+      <div class="muted" id="asof" style="margin-top:6px;"></div>
+    </div>
+
+    <div class="card">
+      <h2>Open positions</h2>
+      <table id="pos"></table>
+    </div>
+
+    <div class="card">
+      <h2>Recent orders</h2>
+      <table id="ord"></table>
+      <p class="muted" style="margin-top:8px;">Orders fill at the next published closing price, so you can
+        never trade on a price you have already seen. A rejected order tells you why in the note column.</p>
+    </div>
+
+    <div class="card">
+      <h2>Leaderboard — ranked on hedge effectiveness</h2>
+      <table id="lb"></table>
+      <p class="muted" style="margin-top:8px;">Rank is by how much of the payable's risk you removed, not by
+        profit. Over one term, FX profit is mostly luck; managing a known exposure is the skill being assessed.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+function n(x, d) { return (x === '' || x === null || x === undefined || isNaN(x)) ? '—'
+  : Number(x).toLocaleString('en-GB', {minimumFractionDigits: d || 0, maximumFractionDigits: d || 0}); }
+
+google.script.run.withSuccessHandler(render).withFailureHandler(function (e) {
+  document.getElementById('loading').innerHTML =
+    '<div class="err">Could not load: ' + e.message + '</div>';
+}).getMyState();
+
+function render(s) {
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('app').style.display = '';
+
+  document.getElementById('msg').innerHTML = s.error ? '<div class="err">' + s.error + '</div>' : '';
+  document.getElementById('asof').textContent =
+    'Prices as of ' + s.latestDate + (s.spot ? '  ·  USD ' + s.spot.usd.toFixed(4) +
+    ' · EUR ' + s.spot.eur.toFixed(4) + ' GBP per unit  ·  USD realised vol ' +
+    (100 * s.spot.vu).toFixed(1) + '%' : '');
+
+  if (!s.found) { renderLb(s); return; }
+
+  var m = s.mandate;
+  document.getElementById('mandate').innerHTML = !m
+    ? '<div class="mand">No round is open yet. Your first mandate is issued on the start date below.</div>'
+    : (m.open
+      ? '<div class="mand"><b>Round ' + m.round + '.</b> You ' +
+        (m.isPayable
+          ? 'must pay <b>' + n(m.qty) + ' ' + m.ccy + '</b>'
+          : 'will receive <b>' + n(m.qty) + ' ' + m.ccy + '</b>') +
+        ' in <b>' + m.daysLeft + ' trading days</b>. Fixing it with a forward today is worth <b>£' +
+        n(m.lockNow, 2) + '</b>. On your books it currently marks at <b>£' + n(m.value, 2) +
+        '</b>. Hedge it by <b>' + (m.isPayable ? 'buying' : 'selling') + ' ' + m.ccy +
+        ' forward</b>, or with a ' + (m.isPayable ? 'call' : 'put') +
+        '. Your job is to make the outcome <i>certain</i>.</div>'
+      : '<div class="mand"><b>Round ' + m.round + ' mandate settled.</b> ' +
+        (m.cost >= 0 ? 'It cost you <b>£' + n(m.cost, 2) + '</b>.'
+                     : 'It brought in <b>£' + n(-m.cost, 2) + '</b>.') +
+        ' Your score is the certainty you achieved, not the profit.</div>');
+
+  document.getElementById('sched').innerHTML = (s.schedule && s.schedule.length)
+    ? '<tr><th>round</th><th>from</th><th>to</th><th>mandate</th></tr>' +
+      s.schedule.map(function (r) {
+        var live = m && r.round === m.round;
+        return '<tr class="' + (live ? 'me' : '') + '"><td>' + r.round + '</td><td>' + r.start +
+        '</td><td>' + r.end + '</td><td>' + r.mandate + (live ? '  ← now' : '') + '</td></tr>';
+      }).join('')
+    : '';
+
+  var rr = s.rounds || [];
+  document.getElementById('rounds').innerHTML = rr.length
+    ? '<tr><th>#</th><th>mandate</th><th>net worth</th><th>vol</th><th>max DD</th><th>hedge eff.</th><th>trades</th></tr>' +
+      rr.map(function (r) {
+        return '<tr><td>' + r.round + '</td><td>' + r.mandate + '</td><td>£' + n(r.netWorth, 2) +
+        '</td><td>' + r.vol + '%</td><td class="bad">' + r.maxDD + '%</td><td class="' +
+        (r.hedgeEff >= 80 ? 'ok' : '') + '">' + (r.hedgeEff === '' ? '—' : r.hedgeEff + '%') +
+        '</td><td>' + r.trades + '</td></tr>';
+      }).join('')
+    : '<tr><td class="muted">No completed rounds yet.</td></tr>';
+
+  var a = s.account;
+  document.getElementById('kpis').innerHTML =
+    kpi('net worth', '£' + n(a.nav, 2), a.nav >= 0 ? '' : 'bad') +
+    kpi('GBP cash', '£' + n(a.cash, 2)) +
+    kpi('USD balance', n(a.usd, 2)) +
+    kpi('net FX exposure', '£' + n(a.exposure, 0)) +
+    kpi('margin used', '£' + n(a.margin, 0)) +
+    kpi('leaderboard rank', s.myRank || '—');
+
+  var p = s.positions;
+  document.getElementById('pos').innerHTML = p.length
+    ? '<tr><th>id</th><th>instrument</th><th>size</th><th>entry</th><th>strike</th><th>days left</th><th>value</th></tr>' +
+      p.map(function (r) {
+        return '<tr><td>' + r.posId + '</td><td>' + r.kind + ' ' + r.ccy + '</td><td>' + n(r.qty) +
+        '</td><td>' + r.entry + '</td><td>' + (r.strike || '—') + '</td><td>' + r.daysLeft +
+        '</td><td class="' + (r.value >= 0 ? 'ok' : 'bad') + '">£' + n(r.value, 2) + '</td></tr>';
+      }).join('')
+    : '<tr><td class="muted">No open positions. Your payable is unhedged.</td></tr>';
+
+  document.getElementById('ord').innerHTML =
+    '<tr><th>submitted</th><th>order</th><th>size</th><th>status</th><th>filled</th><th>note</th></tr>' +
+    (s.orders.length ? s.orders.map(function (o) {
+      return '<tr><td>' + o.when + '</td><td>' + o.dir + ' ' + o.kind + ' ' + o.ccy +
+      '</td><td>' + n(o.qty) + '</td><td class="' + (o.status === 'FILLED' ? 'ok' :
+      (o.status === 'REJECTED' ? 'bad' : '')) + '">' + o.status + '</td><td>' +
+      (o.fillDate || '—') + (o.fillPx ? ' @' + o.fillPx : '') + '</td><td class="muted">' +
+      (o.note || '') + '</td></tr>';
+    }).join('') : '<tr><td class="muted">No orders yet.</td></tr>');
+
+  renderLb(s);
+  spark(s.nav);
+}
+
+function kpi(label, val, cls) {
+  return '<div class="kpi"><small>' + label + '</small><b class="' + (cls || '') + '">' + val + '</b></div>';
+}
+
+function renderLb(s) {
+  document.getElementById('lb').innerHTML =
+    '<tr><th>#</th><th>student</th><th>rounds</th><th>avg hedge eff.</th><th>worst round</th>' +
+    '<th>avg vol</th><th>per round</th><th></th></tr>' +
+    (s.leaderboard.length ? s.leaderboard.map(function (r) {
+      return '<tr class="' + (r.isMe ? 'me' : '') + '"><td>' + r.rank + '</td><td>' + r.name +
+      (r.isMe ? ' (you)' : '') + '</td><td>' + r.roundsDone + '</td><td>' +
+      (r.avgHedgeEff === '' ? '—' : r.avgHedgeEff + '%') + '</td><td>' +
+      (r.worstRoundEff === '' ? '—' : r.worstRoundEff + '%') + '</td><td>' + r.avgVol +
+      '%</td><td class="muted">' + (r.perRound || '') + '</td><td class="muted">' +
+      r.status + '</td></tr>';
+    }).join('') : '<tr><td class="muted">Leaderboard is empty until the first round closes.</td></tr>');
+}
+
+function spark(nav) {
+  var cv = document.getElementById('spark');
+  if (!nav || nav.length < 2) { cv.style.display = 'none'; return; }
+  var ctx = cv.getContext('2d'), W = cv.width = cv.offsetWidth, H = cv.height = 120;
+  var vs = nav.map(function (p) { return p.v; });
+  var lo = Math.min.apply(null, vs), hi = Math.max.apply(null, vs), pad = (hi - lo) * 0.15 || 1;
+  lo -= pad; hi += pad;
+  ctx.clearRect(0, 0, W, H);
+  ctx.strokeStyle = '#8A1538'; ctx.lineWidth = 2; ctx.beginPath();
+  vs.forEach(function (v, k) {
+    var x = k / (vs.length - 1) * (W - 4) + 2, y = H - 4 - (v - lo) / (hi - lo) * (H - 12);
+    k ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  });
+  ctx.stroke();
+  ctx.fillStyle = '#5E6A75'; ctx.font = '11px system-ui';
+  ctx.fillText('net worth £' + vs[vs.length - 1].toFixed(0), 4, 12);
+}
+</script>
+</body>
+</html>
