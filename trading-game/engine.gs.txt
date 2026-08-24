@@ -1384,10 +1384,16 @@ function seedDemo() {
   var rounds = readSheet_(SHEETS.ROUNDS);
   rounds.forEach(function (rd) {
     var qty = Math.abs(+rd.qty), ccy = String(rd.ccy).toLowerCase();
-    var dir = (+rd.qty > 0) ? 'buy / long' : 'sell / short';
+    // A forward FLIPS with the exposure: buy the currency you owe, sell the one
+    // you are due to receive.
+    var fwdDir = (+rd.qty > 0) ? 'buy / long' : 'sell / short';
+    // An option does NOT. The call/put choice already carries the direction, so
+    // the hedger is always the BUYER. Writing an option to hedge collects a
+    // premium and keeps every bit of the downside, which is the classic
+    // mistake, not the hedge.
     var optKind = (+rd.qty > 0) ? 'call' : 'put';     // payable -> call, receivable -> put
     var tenor = 999;                                   // engine shortens this to the round end
-    function order(player, kind, q, note) {
+    function order(player, kind, q, dir, note) {
       // Stamp each order inside its OWN round. Without this every seeded order
       // is pending on the first replayed day, so all four rounds' hedges pile
       // into round 1 and rounds 2-4 run naked -- which is not what this demo
@@ -1396,10 +1402,10 @@ function seedDemo() {
         dir: dir, qty: q, tenor: tenor, strike: '', status: 'PENDING',
         note: 'R' + rd.round + ' ' + note });
     }
-    order('DEMO-FWD',      'fwd',   qty,     'full forward hedge');
-    order('DEMO-OPT',   optKind, qty,     'ATM option: cap the cost, keep the upside');
-    order('DEMO-HALF', 'fwd',   qty / 2, 'half forward');
-    order('DEMO-HALF', optKind, qty / 2, 'half option');
+    order('DEMO-FWD',  'fwd',   qty,     fwdDir,       'full forward hedge');
+    order('DEMO-OPT',  optKind, qty,     'buy / long', 'ATM option: cap the cost, keep the upside');
+    order('DEMO-HALF', 'fwd',   qty / 2, fwdDir,       'half forward');
+    order('DEMO-HALF', optKind, qty / 2, 'buy / long', 'half option');
     // "unhedged" deliberately places no order — an untouched mandate IS the gamble.
   });
 
