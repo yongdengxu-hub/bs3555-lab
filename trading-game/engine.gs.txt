@@ -1097,8 +1097,17 @@ function rebuildLeaderboard() {
   return rows.length;
 }
 
-/** One row per student per round, plus the aggregate, for marking. */
-function exportForMarking() {
+/**
+ * One row per player per round, plus the aggregate, written to an "Export" tab.
+ *
+ * This deliberately does NOT use DriveApp. Creating a single CSV file would
+ * force the whole script to request "see, edit, create and delete all of your
+ * Google Drive files" -- the widest permission on the consent screen -- on a
+ * personal Google account, for a game that awards no marks. A tab carries the
+ * same data, and File > Download > Comma-separated values produces the same
+ * CSV when you actually want the file.
+ */
+function exportResults() {
   var res = readSheet_(SHEETS.ROUNDRES);
   var lead = readSheet_(SHEETS.LEADER);
 
@@ -1118,18 +1127,25 @@ function exportForMarking() {
               r.avgVol, r.avgChange, r.worstDD, r.totalTrades, r.perRound, r.status]);
   });
 
-  var csv = out.map(function (r) {
-    return r.map(function (cell) {
-      var s = (cell === undefined || cell === null) ? '' : String(cell);
-      return /[",]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
-    }).join(',');
-  }).join('\n');
+  // setValues needs every row the same length
+  var wide = out.reduce(function (m, r) { return Math.max(m, r.length); }, 1);
+  var grid = out.map(function (r) {
+    var row = r.slice();
+    while (row.length < wide) row.push('');
+    return row.map(function (c) { return (c === undefined || c === null) ? '' : c; });
+  });
 
-  var file = DriveApp.createFile('BS3555_trading_results_' +
-               Utilities.formatDate(new Date(), 'Etc/GMT', 'yyyyMMdd') + '.csv', csv, MimeType.CSV);
+  var ss = ss_();
+  var sh = ss.getSheetByName('Export');
+  if (!sh) sh = ss.insertSheet('Export'); else sh.clear();
+  sh.getRange(1, 1, grid.length, wide).setValues(grid);
+  sh.setFrozenRows(2);
+  ss.setActiveSheet(sh);
+
   SpreadsheetApp.getUi().alert('Exported',
-    'Saved to your Drive:\n' + file.getName() + '\n\n' +
-    res.length + ' round results, ' + lead.length + ' students.',
+    'Written to the "Export" tab.\n\n' +
+    res.length + ' round results, ' + lead.length + ' players.\n\n' +
+    'For a file: File > Download > Comma-separated values (.csv).',
     SpreadsheetApp.getUi().ButtonSet.OK);
 }
 
@@ -1157,7 +1173,7 @@ function onOpen() {
     .addItem('Rebuild leaderboard', 'rebuildLeaderboard')
     .addSeparator()
     .addItem('Seed 3 demo students + test trades', 'seedDemo')
-    .addItem('Export results for marking (CSV)', 'exportForMarking')
+    .addItem('Export results to a tab', 'exportResults')
     .addItem('Reset game state (keeps prices + students)', 'resetGameState')
     .addToUi();
 }
