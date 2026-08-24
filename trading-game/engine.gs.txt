@@ -3,19 +3,30 @@
  *
  * This is 00_Config .. 06_WebApp concatenated, for easy pasting into the
  * Apps Script editor. The only other file you need is Dashboard.html.
- * Generated 2026-08-22. Edit the individual files and re-run
- * tools/combine.sh if you prefer to work on them separately.
+ * Generated 2026-08-24. Edit the individual files and regenerate if you
+ * prefer to work on them separately.
+ *
+ * Players are identified ONLY by an opaque code (e.g. FX-7Q42). No name,
+ * email or student number is collected anywhere in this project. Keep the
+ * code-to-student list in Cardiff OneDrive, never here.
  */
 
 // ===================================================================
 // ===  00_Config.gs
 // ===================================================================
+
 /**
  * BS3555 FX Trading Game — configuration and sheet helpers.
  *
  * DESIGN NOTE (important): orders are APPEND-ONLY. Students never mutate state.
  * Every change to cash, positions and NAV happens inside the single nightly job.
  * That is what removes all concurrency problems with 150 students.
+ *
+ * PRIVACY NOTE (important): players are identified ONLY by an opaque code that
+ * the lecturer issues (e.g. FX-7Q42). No name, email or student number is ever
+ * collected here. The code-to-student list is kept separately on Cardiff
+ * OneDrive, so this file holds no personal data and nothing in it can be traced
+ * to a person on its own. Do not add an email column back.
  */
 
 // ---------------------------------------------------------------- defaults
@@ -34,8 +45,7 @@ var DEFAULTS = {
   COST_FWD:         0.0005,
   COST_FUT:         0.0003,
   COST_OPT:         0.02,           // fraction of premium
-  VOL_WINDOW:       21,             // trading days for realised vol
-  EMAIL_CONFIRM:    'no'            // 'yes' to email each student on fill
+  VOL_WINDOW:       21              // trading days for realised vol
 };
 
 var SHEETS = {
@@ -61,17 +71,19 @@ var HEADERS = {
   // big enough that equity stays comfortably positive, or the student cannot
   // trade at all: a firm with £1,000 cannot owe £1,540.
   Rounds:      ['round', 'startDate', 'endDate', 'ccy', 'qty', 'kind', 'capital', 'note'],
-  Students:    ['email', 'studentId', 'name', 'joinDate', 'status'],
-  Orders:      ['timestamp', 'email', 'kind', 'ccy', 'dir', 'qty', 'tenor', 'strike',
+  // alias = an optional self-chosen leaderboard nickname. It must NOT be the
+  // student's real name: this sheet is deliberately free of personal data.
+  Students:    ['player', 'alias', 'joinDate', 'status'],
+  Orders:      ['timestamp', 'player', 'kind', 'ccy', 'dir', 'qty', 'tenor', 'strike',
                 'status', 'fillDate', 'fillPx', 'note'],
-  Positions:   ['posId', 'email', 'round', 'kind', 'ccy', 'qty', 'entry', 'strike',
+  Positions:   ['posId', 'player', 'round', 'kind', 'ccy', 'qty', 'entry', 'strike',
                 'openDate', 'matIdx', 'lastF', 'status'],
-  Accounts:    ['email', 'round', 'gbpCash', 'usdBal', 'eurBal', 'liabCcy', 'liabQty',
+  Accounts:    ['player', 'round', 'gbpCash', 'usdBal', 'eurBal', 'liabCcy', 'liabQty',
                 'liabMatIdx', 'liabOpen', 'liabCost', 'bust', 'note'],
-  NAV:         ['date', 'round', 'email', 'nav', 'cash', 'exposure', 'marginUsed', 'note'],
-  RoundResults:['round', 'email', 'startDate', 'endDate', 'mandate', 'netWorth', 'change',
+  NAV:         ['date', 'round', 'player', 'nav', 'cash', 'exposure', 'marginUsed', 'note'],
+  RoundResults:['round', 'player', 'startDate', 'endDate', 'mandate', 'netWorth', 'change',
                 'volAnn', 'maxDD', 'worstDay', 'hedgeEff', 'trades', 'liabCost', 'status'],
-  Leaderboard: ['rank', 'email', 'name', 'roundsDone', 'avgHedgeEff', 'worstRoundEff',
+  Leaderboard: ['rank', 'player', 'alias', 'roundsDone', 'avgHedgeEff', 'worstRoundEff',
                 'avgVol', 'avgChange', 'worstDD', 'totalTrades', 'perRound', 'status'],
   Log:         ['timestamp', 'level', 'message']
 };
@@ -146,10 +158,10 @@ function log_(level, msg) {
   } catch (e) { /* logging must never break the run */ }
 }
 
-
 // ===================================================================
 // ===  01_Pricing.gs
 // ===================================================================
+
 /**
  * BS3555 FX Trading Game — pricing engine.
  *
@@ -252,10 +264,10 @@ function runSelfTest() {
   return ok;
 }
 
-
 // ===================================================================
 // ===  02_Data.gs
 // ===================================================================
+
 /**
  * BS3555 FX Trading Game — market data.
  *
@@ -393,10 +405,10 @@ function loadPrices_() {
   return { rows: rows, idx: idx };
 }
 
-
 // ===================================================================
 // ===  03_Engine.gs
 // ===================================================================
+
 /**
  * BS3555 FX Trading Game — the engine (monthly mandate rounds).
  *
@@ -462,7 +474,7 @@ function nightlyRun() {
     saveAccounts_(accounts);
     savePositions_(positions);
     writeSheet_(SHEETS.ORDERS, orders.map(function (o) {
-      return { timestamp: o.timestamp, email: o.email, kind: o.kind, ccy: o.ccy, dir: o.dir,
+      return { timestamp: o.timestamp, player: o.player, kind: o.kind, ccy: o.ccy, dir: o.dir,
                qty: o.qty, tenor: o.tenor, strike: o.strike, status: o.status,
                fillDate: o.fillDate || '', fillPx: o.fillPx || '', note: o.note || '' };
     }));
@@ -573,8 +585,8 @@ function processDay_(c, P, i, rounds, accounts, positions, orders, navOut, resOu
   var rd = roundAt_(rounds, i);
   if (!rd) return;
 
-  Object.keys(accounts).forEach(function (email) {
-    var a = accounts[email];
+  Object.keys(accounts).forEach(function (player) {
+    var a = accounts[player];
 
     // 0. new round opens today
     if (a.round !== rd.round && i === rd.startIdx) {
@@ -591,7 +603,7 @@ function processDay_(c, P, i, rounds, accounts, positions, orders, navOut, resOu
 
       // 2. futures marked to market in cash
       positions.forEach(function (p) {
-        if (p.email !== email || p.status !== 'OPEN' || p.kind !== 'fut') return;
+        if (p.player !== player || p.status !== 'OPEN' || p.kind !== 'fut') return;
         var fNow = fwdFor_(px, p.ccy, Math.max(p.matIdx - i, 1));
         a.gbpCash += p.qty * (fNow - p.lastF);
         p.lastF = fNow;
@@ -599,7 +611,7 @@ function processDay_(c, P, i, rounds, accounts, positions, orders, navOut, resOu
 
       // 3. expiries
       positions.forEach(function (p) {
-        if (p.email !== email || p.status !== 'OPEN' || i < p.matIdx) return;
+        if (p.player !== player || p.status !== 'OPEN' || i < p.matIdx) return;
         if (p.kind === 'fwd')       a.gbpCash += p.qty * (px[p.ccy] - p.entry);
         else if (p.kind === 'call') a.gbpCash += p.qty * Math.max(px[p.ccy] - p.strike, 0);
         else if (p.kind === 'put')  a.gbpCash += p.qty * Math.max(p.strike - px[p.ccy], 0);
@@ -614,8 +626,8 @@ function processDay_(c, P, i, rounds, accounts, positions, orders, navOut, resOu
   // 5. fill orders submitted since the last close
   orders.forEach(function (o) {
     if (o.status !== 'PENDING' && o.status !== '') return;
-    var a = accounts[String(o.email).toLowerCase().trim()];
-    if (!a) { o.status = 'REJECTED'; o.note = 'no account for this email'; return; }
+    var a = accounts[String(o.player).toLowerCase().trim()];
+    if (!a) { o.status = 'REJECTED'; o.note = 'player code not recognised — check the code your lecturer gave you'; return; }
     if (a.bust) { o.status = 'REJECTED'; o.note = 'account is bust'; return; }
     var res = fillOrder_(c, P, i, a, positions, o, rd);
     o.status = res.ok ? 'FILLED' : 'REJECTED';
@@ -625,8 +637,8 @@ function processDay_(c, P, i, rounds, accounts, positions, orders, navOut, resOu
   });
 
   // 6. value, margin-check, record
-  Object.keys(accounts).forEach(function (email) {
-    var a = accounts[email];
+  Object.keys(accounts).forEach(function (player) {
+    var a = accounts[player];
     if (a.round !== rd.round) return;
     var st = stateOf_(c, P, i, a, positions);
     if (!a.bust && st.margin > 0 && st.nav < st.margin) {
@@ -635,15 +647,15 @@ function processDay_(c, P, i, rounds, accounts, positions, orders, navOut, resOu
       st = stateOf_(c, P, i, a, positions);
     }
     if (!a.bust && st.nav <= 0) { a.bust = true; a.note = 'BUST ' + px.date; }
-    navOut.push({ date: px.date, round: rd.round, email: email, nav: round_(st.nav, 4),
+    navOut.push({ date: px.date, round: rd.round, player: player, nav: round_(st.nav, 4),
                   cash: round_(a.gbpCash, 4), exposure: round_(st.exposure, 2),
                   marginUsed: round_(st.margin, 2), note: a.bust ? 'bust' : '' });
   });
 
   // round closes today -> freeze the result
   if (i === rd.endIdx) {
-    Object.keys(accounts).forEach(function (email) {
-      var a = accounts[email];
+    Object.keys(accounts).forEach(function (player) {
+      var a = accounts[player];
       if (a.round !== rd.round) return;
       closeRound_(c, P, i, rd, a, positions, navOut, resOut, orders);
     });
@@ -655,7 +667,7 @@ function startRound_(c, P, i, rd, a, positions) {
   var px = P.rows[i];
   // anything still open from the previous round is closed at market
   positions.forEach(function (p) {
-    if (p.email !== a.email || p.status !== 'OPEN') return;
+    if (p.player !== a.player || p.status !== 'OPEN') return;
     a.gbpCash += posValue_(px, i, p);
     p.status = 'ROLLED';
   });
@@ -698,7 +710,7 @@ function closeRound_(c, P, i, rd, a, positions, navOut, resOut, orders) {
   var px = P.rows[i];
   if (a.liabOpen) settleMandate_(c, px, a);
   positions.forEach(function (p) {
-    if (p.email !== a.email || p.status !== 'OPEN') return;
+    if (p.player !== a.player || p.status !== 'OPEN') return;
     a.gbpCash += posValue_(px, i, p);
     p.status = 'CLOSED';
   });
@@ -706,19 +718,19 @@ function closeRound_(c, P, i, rd, a, positions, navOut, resOut, orders) {
   a.usdBal = 0; a.eurBal = 0;
 
   var navs = navOut.filter(function (n) {
-    return n.email === a.email && n.round === rd.round;
+    return n.player === a.player && n.round === rd.round;
   }).map(function (n) { return { d: n.date, nav: n.nav }; });
 
   var trades = 0;
   orders.forEach(function (o) {
-    if (String(o.email).toLowerCase().trim() === a.email &&
+    if (String(o.player).toLowerCase().trim() === a.player &&
         String(o.status).toUpperCase() === 'FILLED' &&
         ymd_(o.fillDate) >= rd.startDate && ymd_(o.fillDate) <= rd.endDate) trades++;
   });
 
   var m = roundStats_(c, P, rd, navs);
   resOut.push({
-    round: rd.round, email: a.email, startDate: rd.startDate, endDate: rd.endDate,
+    round: rd.round, player: a.player, startDate: rd.startDate, endDate: rd.endDate,
     mandate: (rd.qty > 0 ? 'owe ' : 'receive ') + Math.abs(rd.qty) + ' ' + rd.ccy.toUpperCase(),
     netWorth: round_(a.gbpCash, 2),
     change: round_(m.change * 100, 2), volAnn: round_(m.vol * 100, 1),
@@ -758,7 +770,7 @@ function liabValue_(px, i, a) {
 function exposure_(px, a, positions, extraCcy, extraQty) {
   var e = { usd: a.usdBal, eur: a.eurBal };
   positions.forEach(function (p) {
-    if (p.email === a.email && p.status === 'OPEN') e[p.ccy] += p.qty;
+    if (p.player === a.player && p.status === 'OPEN') e[p.ccy] += p.qty;
   });
   if (a.liabOpen) e[a.liabCcy] -= a.liabQty;   // owing FC is short FC
   if (extraCcy) e[extraCcy] += extraQty;
@@ -768,11 +780,11 @@ function exposure_(px, a, positions, extraCcy, extraQty) {
 function stateOf_(c, P, i, a, positions) {
   var px = P.rows[i];
   var assets = a.gbpCash + a.usdBal * px.usd + a.eurBal * px.eur;
-  positions.forEach(function (p) { if (p.email === a.email) assets += posValue_(px, i, p); });
+  positions.forEach(function (p) { if (p.player === a.player) assets += posValue_(px, i, p); });
   var nav = assets + liabValue_(px, i, a);
   var margin = 0;
   positions.forEach(function (p) {
-    if (p.email !== a.email || p.status !== 'OPEN') return;
+    if (p.player !== a.player || p.status !== 'OPEN') return;
     if (p.kind === 'fut') margin += c.MARGIN_FUT * Math.abs(p.qty) * px[p.ccy];
     else if ((p.kind === 'call' || p.kind === 'put') && p.qty < 0)
       margin += c.MARGIN_SHORTOPT * Math.abs(p.qty) * px[p.ccy];
@@ -783,7 +795,7 @@ function stateOf_(c, P, i, a, positions) {
 function liquidate_(c, P, i, a, positions) {
   var px = P.rows[i];
   positions.forEach(function (p) {
-    if (p.email !== a.email || p.status !== 'OPEN') return;
+    if (p.player !== a.player || p.status !== 'OPEN') return;
     a.gbpCash += posValue_(px, i, p);
     p.status = 'LIQUIDATED';
   });
@@ -863,7 +875,7 @@ function fillOrder_(c, P, i, a, positions, o, rd) {
       var need = c.MARGIN_FUT * Math.abs(qty) * px[ccy];
       if (st.nav < st.margin + need) return { ok: false, note: 'rejected: not enough free margin' };
     }
-    positions.push({ posId: nextPosId_(positions), email: a.email, round: a.round, kind: kind,
+    positions.push({ posId: nextPosId_(positions), player: a.player, round: a.round, kind: kind,
                      ccy: ccy, qty: qty, entry: F, strike: null, openDate: px.date,
                      matIdx: i + tenor, lastF: (kind === 'fut' ? F : null), status: 'OPEN' });
     return { ok: true, px: F, note: kind + ' filled at ' + round_(F, 5) +
@@ -880,7 +892,7 @@ function fillOrder_(c, P, i, a, positions, o, rd) {
     if (st.nav < st.margin + m) return { ok: false, note: 'rejected: not enough margin to write this option' };
   }
   a.gbpCash -= paid;
-  positions.push({ posId: nextPosId_(positions), email: a.email, round: a.round, kind: kind,
+  positions.push({ posId: nextPosId_(positions), player: a.player, round: a.round, kind: kind,
                    ccy: ccy, qty: qty, entry: prem, strike: X, openDate: px.date,
                    matIdx: i + tenor, lastF: null, status: 'OPEN' });
   return { ok: true, px: prem, note: kind + ' @' + round_(X, 4) + ' premium ' + round_(prem, 5) };
@@ -896,7 +908,7 @@ function round_(x, n) { var f = Math.pow(10, n); return Math.round(x * f) / f; }
 // ---------------------------------------------------------------- persistence
 function loadPositions_() {
   return readSheet_(SHEETS.POSITIONS).map(function (p) {
-    return { posId: p.posId, email: String(p.email).toLowerCase().trim(), round: +p.round,
+    return { posId: p.posId, player: String(p.player).toLowerCase().trim(), round: +p.round,
              kind: p.kind, ccy: p.ccy, qty: +p.qty, entry: +p.entry,
              strike: p.strike === '' ? null : +p.strike, openDate: ymd_(p.openDate),
              matIdx: +p.matIdx, lastF: p.lastF === '' ? null : +p.lastF, status: p.status };
@@ -904,7 +916,7 @@ function loadPositions_() {
 }
 function savePositions_(positions) {
   writeSheet_(SHEETS.POSITIONS, positions.map(function (p) {
-    return { posId: p.posId, email: p.email, round: p.round, kind: p.kind, ccy: p.ccy,
+    return { posId: p.posId, player: p.player, round: p.round, kind: p.kind, ccy: p.ccy,
              qty: p.qty, entry: round_(p.entry, 6),
              strike: p.strike === null ? '' : round_(p.strike, 6), openDate: p.openDate,
              matIdx: p.matIdx, lastF: p.lastF === null ? '' : round_(p.lastF, 6),
@@ -917,14 +929,14 @@ function ensureAccounts_(rounds) {
   var students = readSheet_(SHEETS.STUDENTS);
   var accounts = readSheet_(SHEETS.ACCOUNTS);
   var have = {};
-  accounts.forEach(function (a) { have[String(a.email).toLowerCase().trim()] = true; });
+  accounts.forEach(function (a) { have[String(a.player).toLowerCase().trim()] = true; });
 
   students.forEach(function (s) {
-    var email = String(s.email).toLowerCase().trim();
-    if (!email || have[email]) return;
+    var player = String(s.player).toLowerCase().trim();
+    if (!player || have[player]) return;
     if (String(s.status).toLowerCase() === 'inactive') return;
     appendRow_(SHEETS.ACCOUNTS, {
-      email: email, round: 0, gbpCash: c.START_CAPITAL, usdBal: 0, eurBal: 0,
+      player: player, round: 0, gbpCash: c.START_CAPITAL, usdBal: 0, eurBal: 0,
       liabCcy: '', liabQty: 0, liabMatIdx: 0, liabOpen: 'FALSE', liabCost: '',
       bust: 'FALSE', note: 'created — awaiting first round'
     });
@@ -934,10 +946,10 @@ function ensureAccounts_(rounds) {
 function loadAccounts_() {
   var out = {};
   readSheet_(SHEETS.ACCOUNTS).forEach(function (a) {
-    var email = String(a.email).toLowerCase().trim();
-    if (!email) return;
-    out[email] = {
-      email: email, round: +a.round || 0,
+    var player = String(a.player).toLowerCase().trim();
+    if (!player) return;
+    out[player] = {
+      player: player, round: +a.round || 0,
       gbpCash: +a.gbpCash, usdBal: +a.usdBal, eurBal: +a.eurBal,
       liabCcy: String(a.liabCcy || '').toLowerCase(), liabQty: +a.liabQty || 0,
       liabMatIdx: +a.liabMatIdx || 0,
@@ -953,7 +965,7 @@ function loadAccounts_() {
 function saveAccounts_(accounts) {
   writeSheet_(SHEETS.ACCOUNTS, Object.keys(accounts).map(function (k) {
     var a = accounts[k];
-    return { email: a.email, round: a.round, gbpCash: round_(a.gbpCash, 4),
+    return { player: a.player, round: a.round, gbpCash: round_(a.gbpCash, 4),
              usdBal: round_(a.usdBal, 4), eurBal: round_(a.eurBal, 4),
              liabCcy: a.liabCcy, liabQty: a.liabQty, liabMatIdx: a.liabMatIdx,
              liabOpen: a.liabOpen ? 'TRUE' : 'FALSE',
@@ -962,10 +974,10 @@ function saveAccounts_(accounts) {
   }));
 }
 
-
 // ===================================================================
 // ===  04_Metrics.gs
 // ===================================================================
+
 /**
  * BS3555 FX Trading Game — leaderboard across monthly mandate rounds.
  *
@@ -983,13 +995,13 @@ function rebuildLeaderboard() {
   var results = readSheet_(SHEETS.ROUNDRES);
   var students = {};
   readSheet_(SHEETS.STUDENTS).forEach(function (s) {
-    students[String(s.email).toLowerCase().trim()] = s.name || s.studentId || '';
+    students[String(s.player).toLowerCase().trim()] = s.alias || '';
   });
   var accounts = loadAccounts_();
 
   var by = {};
   results.forEach(function (r) {
-    var e = String(r.email).toLowerCase().trim();
+    var e = String(r.player).toLowerCase().trim();
     if (!by[e]) by[e] = [];
     by[e].push({
       round: +r.round,
@@ -1002,19 +1014,19 @@ function rebuildLeaderboard() {
   // students with an account but no completed round yet still deserve a row
   Object.keys(accounts).forEach(function (e) { if (!by[e]) by[e] = []; });
 
-  var rows = Object.keys(by).map(function (email) {
-    var rs = by[email].slice().sort(function (x, y) { return x.round - y.round; });
+  var rows = Object.keys(by).map(function (player) {
+    var rs = by[player].slice().sort(function (x, y) { return x.round - y.round; });
     var withHe = rs.filter(function (r) { return r.he !== null; });
     var mean = function (arr, f) {
       return arr.length ? arr.reduce(function (a, b) { return a + f(b); }, 0) / arr.length : null;
     };
     var avgHe = mean(withHe, function (r) { return r.he; });
     var worstHe = withHe.length ? Math.min.apply(null, withHe.map(function (r) { return r.he; })) : null;
-    var a = accounts[email];
+    var a = accounts[player];
 
     return {
-      email: email,
-      name: students[email] || '',
+      player: player,
+      alias: students[player] || '',
       roundsDone: rs.length,
       avgHedgeEff: avgHe === null ? '' : round_(avgHe, 0),
       worstRoundEff: worstHe === null ? '' : round_(worstHe, 0),
@@ -1048,18 +1060,18 @@ function exportForMarking() {
   var lead = readSheet_(SHEETS.LEADER);
 
   var out = [['--- PER ROUND ---'],
-             ['round', 'email', 'mandate', 'startDate', 'endDate', 'netWorth', 'change%',
+             ['round', 'player', 'mandate', 'startDate', 'endDate', 'netWorth', 'change%',
               'vol%', 'maxDD%', 'worstDay%', 'hedgeEff%', 'trades', 'mandateCost', 'status']];
   res.forEach(function (r) {
-    out.push([r.round, r.email, r.mandate, ymd_(r.startDate), ymd_(r.endDate), r.netWorth,
+    out.push([r.round, r.player, r.mandate, ymd_(r.startDate), ymd_(r.endDate), r.netWorth,
               r.change, r.volAnn, r.maxDD, r.worstDay, r.hedgeEff, r.trades, r.liabCost, r.status]);
   });
   out.push([]);
   out.push(['--- TERM AGGREGATE (leaderboard order) ---']);
-  out.push(['rank', 'email', 'name', 'roundsDone', 'avgHedgeEff%', 'worstRoundEff%',
+  out.push(['rank', 'player', 'alias', 'roundsDone', 'avgHedgeEff%', 'worstRoundEff%',
             'avgVol%', 'avgChange%', 'worstDD%', 'totalTrades', 'perRound', 'status']);
   lead.forEach(function (r) {
-    out.push([r.rank, r.email, r.name, r.roundsDone, r.avgHedgeEff, r.worstRoundEff,
+    out.push([r.rank, r.player, r.alias, r.roundsDone, r.avgHedgeEff, r.worstRoundEff,
               r.avgVol, r.avgChange, r.worstDD, r.totalTrades, r.perRound, r.status]);
   });
 
@@ -1078,10 +1090,10 @@ function exportForMarking() {
     SpreadsheetApp.getUi().ButtonSet.OK);
 }
 
-
 // ===================================================================
 // ===  05_Setup.gs
 // ===================================================================
+
 /**
  * BS3555 FX Trading Game — one-click setup, menu and triggers.
  *
@@ -1091,8 +1103,9 @@ function exportForMarking() {
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('BS3555 Game')
     .addItem('1. Set up game (safe to re-run)', 'setupGame')
-    .addItem('2. Create the trade-entry form', 'createTradeForm')
-    .addItem('3. Install nightly trigger', 'installTrigger')
+    .addItem('2. Issue player codes', 'generatePlayerCodes')
+    .addItem('3. Create the trade-entry form', 'createTradeForm')
+    .addItem('4. Install nightly trigger', 'installTrigger')
     .addSeparator()
     .addItem('Regenerate round schedule', 'menuGenerateRounds')
     .addItem('Run pricing self-test', 'runSelfTest')
@@ -1133,7 +1146,7 @@ function setupGame() {
       COST_SPOT: 'transaction cost, fraction', COST_FWD: '', COST_FUT: '',
       COST_OPT: 'fraction of the premium',
       VOL_WINDOW: 'trading days for realised vol',
-      EMAIL_CONFIRM: 'yes / no — email each student when an order is processed'
+      EMAIL_CONFIRM: 'yes / no — player each student when an order is processed'
     };
     var rows = Object.keys(DEFAULTS).map(function (k) {
       return [k, DEFAULTS[k], notes[k] || ''];
@@ -1161,9 +1174,11 @@ function setupGame() {
   SpreadsheetApp.getUi().alert('Set up complete',
     'Sheets created and ' + added + ' price rows loaded.\n' + roundMsg + '\n\n' +
     'Next:\n' +
-    '  2. Create the trade-entry form\n' +
-    '  3. Install nightly trigger\n\n' +
-    'Then paste your students into the Students sheet (email, studentId, name).\n\n' +
+    '  2. Issue player codes (one per student)\n' +
+    '  3. Create the trade-entry form\n' +
+    '  4. Install nightly trigger\n\n' +
+    'Do NOT put student names, emails or numbers in this spreadsheet. The game runs\n' +
+    'on codes alone; keep the code-to-student list in your Cardiff OneDrive.\n\n' +
     'Check the Rounds sheet — you can edit the currency, size and payable/receivable ' +
     'of any round by hand before it starts.',
     SpreadsheetApp.getUi().ButtonSet.OK);
@@ -1211,10 +1226,16 @@ function createTradeForm() {
   form.setDescription(
     'Submit one trade per response. Orders are filled at the NEXT published closing price, ' +
     'so you can never trade on a price you have already seen.\n\n' +
-    'Your mandate: your firm owes USD 1,000 in three months. Make the cost certain.')
-    .setCollectEmail(true)
+    'Your mandate changes every month. Check the dashboard for this one before you trade.\n\n' +
+    'The game knows you only by your player code, so type it exactly as issued. A code it ' +
+    'does not recognise is rejected, and you will see that on your dashboard.')
+    .setCollectEmail(false)
     .setLimitOneResponsePerUser(false)
     .setAllowResponseEdits(false);
+
+  // Deliberately the first question, and deliberately not an email address.
+  form.addTextItem().setTitle('Player code').setRequired(true)
+    .setHelpText('The code your lecturer gave you, e.g. FX-7Q42. Not your name or email.');
 
   form.addListItem().setTitle('Instrument').setRequired(true)
     .setChoiceValues(['spot', 'fwd', 'fut', 'call', 'put']);
@@ -1233,7 +1254,10 @@ function createTradeForm() {
 
   SpreadsheetApp.getUi().alert('Form created',
     'Share this link with students:\n\n' + form.getPublishedUrl() +
-    '\n\nEdit it here:\n' + form.getEditUrl(),
+    '\n\nEdit it here:\n' + form.getEditUrl() +
+    '\n\nEmail collection is OFF, on purpose. Students identify themselves with the code ' +
+    'you issued, so no personal data reaches this spreadsheet. Switching email collection ' +
+    'back on would end that.',
     SpreadsheetApp.getUi().ButtonSet.OK);
 }
 
@@ -1245,11 +1269,10 @@ function onTradeFormSubmit(e) {
       for (var k in v) if (k.toLowerCase().indexOf(label) === 0) return String(v[k][0] || '').trim();
       return '';
     }
-    var email = (v['Email Address'] ? v['Email Address'][0] : '') ||
-                (e.response && e.response.getRespondentEmail ? e.response.getRespondentEmail() : '');
+    var player = g('player code');
     appendRow_(SHEETS.ORDERS, {
       timestamp: new Date(),
-      email: String(email).toLowerCase().trim(),
+      player: String(player).toLowerCase().trim(),
       kind: g('instrument'),
       ccy: g('currency'),
       dir: g('direction'),
@@ -1277,17 +1300,71 @@ function installTrigger() {
     SpreadsheetApp.getUi().ButtonSet.OK);
 }
 
+/**
+ * Issues N fresh player codes into the Students sheet.
+ *
+ * This is where the game's only link to a real student begins and ends. The
+ * spreadsheet gets a code; you keep the code-to-student list in your Cardiff
+ * OneDrive. Nothing stored here can be traced to a person without that list,
+ * which is precisely what keeps the game clear of Cardiff's data rules.
+ */
+function generatePlayerCodes() {
+  var ui = SpreadsheetApp.getUi();
+  var r = ui.prompt('Issue player codes',
+    'How many codes do you need? (one per student, e.g. 150)', ui.ButtonSet.OK_CANCEL);
+  if (r.getSelectedButton() !== ui.Button.OK) return;
+
+  var n = parseInt(r.getResponseText(), 10);
+  if (!(n > 0 && n <= 500)) { ui.alert('Enter a whole number between 1 and 500.'); return; }
+
+  var taken = {};
+  readSheet_(SHEETS.STUDENTS).forEach(function (st) {
+    taken[String(st.player).toUpperCase().trim()] = true;
+  });
+
+  // No O/0 or I/1. These codes get read aloud, written down and typed by hand.
+  var AB = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789', made = [], guard = 0;
+  while (made.length < n && guard++ < n * 100) {
+    var code = 'FX-';
+    for (var i = 0; i < 4; i++) code += AB.charAt(Math.floor(Math.random() * AB.length));
+    if (taken[code]) continue;
+    taken[code] = true;
+    made.push(code);
+  }
+  if (made.length < n) {
+    ui.alert('Could only generate ' + made.length + ' unique codes. Try a smaller number.');
+    return;
+  }
+
+  var today = ymd_(new Date());
+  made.forEach(function (code) {
+    appendRow_(SHEETS.STUDENTS, { player: code, alias: '', joinDate: today, status: 'active' });
+  });
+
+  ui.alert('Issued ' + n + ' player codes',
+    'They are now in the Students sheet.\n\n' +
+    'Next, in your CARDIFF OneDrive, not here:\n' +
+    '  1. Copy the code column into an Excel file.\n' +
+    '  2. Put one student beside each code.\n' +
+    '  3. Mail-merge from that file to tell each student their own code.\n\n' +
+    'That Excel file is the only thing linking a code to a person, so keep it in ' +
+    'OneDrive and nowhere else, and treat it the way you treat a mark sheet.\n\n' +
+    'The alias column is optional: leave it blank and the leaderboard shows the ' +
+    'code itself, which keeps students anonymous to each other.',
+    ui.ButtonSet.OK);
+}
+
 // ---------------------------------------------------------------- demo / reset
 function seedDemo() {
   var c = cfg();
   var demo = [
-    ['hedger@example.com',    'S001', 'Demo — full forward hedge'],
-    ['optioneer@example.com', 'S002', 'Demo — ATM call'],
-    ['halfandhalf@example.com','S003','Demo — 50/50 forward + call'],
-    ['unhedged@example.com',  'S004', 'Demo — did nothing']
+    ['DEMO-FWD',  'Demo — full forward hedge'],
+    ['DEMO-OPT',  'Demo — ATM option'],
+    ['DEMO-HALF', 'Demo — 50/50 forward + option'],
+    ['DEMO-NONE', 'Demo — did nothing']
   ];
   demo.forEach(function (d) {
-    appendRow_(SHEETS.STUDENTS, { email: d[0], studentId: d[1], name: d[2],
+    appendRow_(SHEETS.STUDENTS, { player: d[0], alias: d[1],
                                   joinDate: ymd_(new Date()), status: 'active' });
   });
   // One order per round, matching that round's mandate. A payable is hedged by
@@ -1298,15 +1375,15 @@ function seedDemo() {
     var dir = (+rd.qty > 0) ? 'buy / long' : 'sell / short';
     var optKind = (+rd.qty > 0) ? 'call' : 'put';     // payable -> call, receivable -> put
     var tenor = 999;                                   // engine shortens this to the round end
-    function order(email, kind, q, note) {
-      appendRow_(SHEETS.ORDERS, { timestamp: new Date(), email: email, kind: kind, ccy: ccy,
+    function order(player, kind, q, note) {
+      appendRow_(SHEETS.ORDERS, { timestamp: new Date(), player: player, kind: kind, ccy: ccy,
         dir: dir, qty: q, tenor: tenor, strike: '', status: 'PENDING',
         note: 'R' + rd.round + ' ' + note });
     }
-    order('hedger@example.com',      'fwd',   qty,     'full forward hedge');
-    order('optioneer@example.com',   optKind, qty,     'ATM option: cap the cost, keep the upside');
-    order('halfandhalf@example.com', 'fwd',   qty / 2, 'half forward');
-    order('halfandhalf@example.com', optKind, qty / 2, 'half option');
+    order('DEMO-FWD',      'fwd',   qty,     'full forward hedge');
+    order('DEMO-OPT',   optKind, qty,     'ATM option: cap the cost, keep the upside');
+    order('DEMO-HALF', 'fwd',   qty / 2, 'half forward');
+    order('DEMO-HALF', optKind, qty / 2, 'half option');
     // "unhedged" deliberately places no order — an untouched mandate IS the gamble.
   });
 
@@ -1338,18 +1415,21 @@ function resetGameState() {
   ui.alert('Reset done', 'Run the nightly job to rebuild from the start date.', ui.ButtonSet.OK);
 }
 
-
 // ===================================================================
 // ===  06_WebApp.gs
 // ===================================================================
+
 /**
  * BS3555 FX Trading Game — student dashboard (read-only).
  *
  * Deploy: Extensions > Apps Script > Deploy > New deployment > Web app
  *   Execute as : Me
- *   Access     : Anyone within Cardiff University
- * Students open the URL, are identified by their Google login, and see only
- * their own book plus the shared leaderboard.
+ *   Access     : Anyone
+ *
+ * "Anyone" is deliberate, not laziness. Students identify themselves with the
+ * opaque code their lecturer issued, never with a Google account, so the app
+ * never learns who they are and they need no login at all. A stranger with the
+ * URL sees nothing but a code box and a leaderboard of codes.
  */
 
 function doGet() {
@@ -1358,28 +1438,28 @@ function doGet() {
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
-/** Everything the dashboard needs, for the signed-in student only. */
-function getMyState() {
-  var email = String(Session.getActiveUser().getEmail() || '').toLowerCase().trim();
+/** Everything the dashboard needs, for one player code only. */
+function getMyState(code) {
+  var player = String(code || '').toLowerCase().trim();
   var c = cfg(), P = loadPrices_();
   var latest = P.rows.length ? P.rows[P.rows.length - 1] : null;
 
   var out = {
-    email: email,
+    player: player,
     latestDate: latest ? latest.date : '',
     spot: latest ? { usd: latest.usd, eur: latest.eur, vu: latest.vu, ve: latest.ve } : null,
     gameStart: ymd_(c.GAME_START), gameEnd: ymd_(c.GAME_END),
     found: false, mandate: null, account: null,
     positions: [], orders: [], nav: [], leaderboard: [], myRank: null
   };
-  if (!email) { out.error = 'Could not read your Google identity. Sign in with your Cardiff account.'; return out; }
+  if (!player) { out.error = 'Enter your player code.'; return out; }
 
   var accounts = loadAccounts_();
-  var a = accounts[email];
+  var a = accounts[player];
 
   // leaderboard is shared, but we only show names + metrics (no positions)
   out.leaderboard = readSheet_(SHEETS.LEADER).slice(0, 200).map(function (r) {
-    return { rank: r.rank, name: r.name || '(unnamed)', isMe: String(r.email).toLowerCase() === email,
+    return { rank: r.rank, alias: r.alias || r.player, isMe: String(r.player).toLowerCase() === player,
              avgHedgeEff: r.avgHedgeEff, worstRoundEff: r.worstRoundEff, roundsDone: r.roundsDone,
              avgVol: r.avgVol, avgChange: r.avgChange, perRound: r.perRound, status: r.status };
   });
@@ -1387,7 +1467,7 @@ function getMyState() {
 
   // my completed rounds
   out.rounds = readSheet_(SHEETS.ROUNDRES).filter(function (r) {
-    return String(r.email).toLowerCase() === email;
+    return String(r.player).toLowerCase() === player;
   }).map(function (r) {
     return { round: r.round, mandate: r.mandate, start: ymd_(r.startDate), end: ymd_(r.endDate),
              netWorth: r.netWorth, change: r.change, vol: r.volAnn, maxDD: r.maxDD,
@@ -1401,18 +1481,22 @@ function getMyState() {
                       String(r.ccy).toUpperCase(), note: r.note || '' };
   });
 
-  if (!a) { out.error = 'No account yet. Ask your lecturer to add ' + email + ' to the Students sheet.'; return out; }
+  if (!a) {
+    out.error = 'No account for code "' + player.toUpperCase() + '". Check the code your ' +
+                'lecturer gave you: O and I are never used, so a 0 is a zero and a 1 is a one.';
+    return out;
+  }
   out.found = true;
 
   var i = P.rows.length - 1;
   var st = stateOf_(c, P, i, a, []);   // positions added below
   var positions = readSheet_(SHEETS.POSITIONS).filter(function (p) {
-    return String(p.email).toLowerCase() === email;
+    return String(p.player).toLowerCase() === player;
   }).map(function (p) {
     return { posId: p.posId, kind: p.kind, ccy: p.ccy, qty: +p.qty, entry: +p.entry,
              strike: p.strike === '' ? null : +p.strike, openDate: ymd_(p.openDate),
              matIdx: +p.matIdx, lastF: p.lastF === '' ? null : +p.lastF, status: p.status,
-             email: email };
+             player: player };
   });
   var full = stateOf_(c, P, i, a, positions);
 
@@ -1438,7 +1522,7 @@ function getMyState() {
   });
 
   out.orders = readSheet_(SHEETS.ORDERS).filter(function (o) {
-    return String(o.email).toLowerCase() === email;
+    return String(o.player).toLowerCase() === player;
   }).slice(-15).reverse().map(function (o) {
     return { when: ymd_(o.timestamp), kind: o.kind, ccy: o.ccy, dir: o.dir, qty: o.qty,
              status: o.status, fillDate: o.fillDate ? ymd_(o.fillDate) : '',
@@ -1446,10 +1530,8 @@ function getMyState() {
   });
 
   out.nav = readSheet_(SHEETS.NAV).filter(function (n) {
-    return String(n.email).toLowerCase() === email;
+    return String(n.player).toLowerCase() === player;
   }).map(function (n) { return { d: ymd_(n.date), v: +n.nav }; });
 
   return out;
 }
-
-

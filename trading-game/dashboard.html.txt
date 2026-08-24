@@ -33,11 +33,24 @@
 <body>
 <header><div class="wrap">
   <h1>BS3555 FX Trading Game</h1>
-  <p>Your mandate, your book, your risk numbers.</p>
+  <p>Your mandate, your book, your risk numbers.
+     <a href="#" id="chg" style="display:none;color:#fff;">not you? change code</a></p>
 </div></header>
 
 <div class="wrap">
-  <div id="loading" class="card">Loading your book…</div>
+  <div id="gate" class="card" style="display:none;">
+    <h2>Your player code</h2>
+    <p class="muted">The game knows you by the code your lecturer gave you and by nothing
+       else, so there is no login. The code is remembered in this browser.</p>
+    <p>
+      <input id="code" placeholder="FX-7Q42" spellcheck="false" autocomplete="off"
+             style="font-size:18px;padding:8px;width:180px;letter-spacing:1px;
+                    text-transform:uppercase;">
+      <button id="go" style="font-size:16px;padding:9px 16px;">Show my book</button>
+    </p>
+    <div id="gateErr" class="err" style="display:none;"></div>
+  </div>
+  <div id="loading" class="card" style="display:none;">Loading your book…</div>
   <div id="app" style="display:none;">
     <div id="msg"></div>
 
@@ -88,14 +101,55 @@
 function n(x, d) { return (x === '' || x === null || x === undefined || isNaN(x)) ? '—'
   : Number(x).toLocaleString('en-GB', {minimumFractionDigits: d || 0, maximumFractionDigits: d || 0}); }
 
-google.script.run.withSuccessHandler(render).withFailureHandler(function (e) {
-  document.getElementById('loading').innerHTML =
-    '<div class="err">Could not load: ' + e.message + '</div>';
-}).getMyState();
+var KEY = 'bs3555player';
+var $ = function (id) { return document.getElementById(id); };
+
+function load(code) {
+  $('gate').style.display = 'none';
+  $('loading').style.display = '';
+  google.script.run.withSuccessHandler(render).withFailureHandler(function (e) {
+    $('loading').innerHTML = '<div class="err">Could not load: ' + e.message + '</div>';
+  }).getMyState(code);
+}
+
+/** Back to the code box, optionally with a reason. */
+function gate(msg) {
+  $('loading').style.display = 'none';
+  $('app').style.display = 'none';
+  $('chg').style.display = 'none';
+  $('gate').style.display = '';
+  if (msg) { $('gateErr').textContent = msg; $('gateErr').style.display = ''; }
+  else { $('gateErr').style.display = 'none'; }
+  $('code').focus();
+}
+
+$('go').onclick = function () {
+  var v = $('code').value.trim().toUpperCase();
+  if (!v) { gate('Type your code first.'); return; }
+  localStorage.setItem(KEY, v);
+  load(v);
+};
+$('code').addEventListener('keydown', function (ev) {
+  if (ev.key === 'Enter') $('go').click();
+});
+$('chg').onclick = function (ev) {
+  ev.preventDefault();
+  localStorage.removeItem(KEY);
+  $('code').value = '';
+  gate('');
+  return false;
+};
+
+var saved = localStorage.getItem(KEY);
+if (saved) load(saved); else gate('');
 
 function render(s) {
-  document.getElementById('loading').style.display = 'none';
-  document.getElementById('app').style.display = '';
+  // An unrecognised code is a typo, not a failure — send them back to the box.
+  if (!s.found) { gate(s.error || 'Code not recognised.'); return; }
+
+  $('loading').style.display = 'none';
+  $('app').style.display = '';
+  $('chg').style.display = '';
 
   document.getElementById('msg').innerHTML = s.error ? '<div class="err">' + s.error + '</div>' : '';
   document.getElementById('asof').textContent =
@@ -185,7 +239,7 @@ function renderLb(s) {
     '<tr><th>#</th><th>student</th><th>rounds</th><th>avg hedge eff.</th><th>worst round</th>' +
     '<th>avg vol</th><th>per round</th><th></th></tr>' +
     (s.leaderboard.length ? s.leaderboard.map(function (r) {
-      return '<tr class="' + (r.isMe ? 'me' : '') + '"><td>' + r.rank + '</td><td>' + r.name +
+      return '<tr class="' + (r.isMe ? 'me' : '') + '"><td>' + r.rank + '</td><td>' + r.alias +
       (r.isMe ? ' (you)' : '') + '</td><td>' + r.roundsDone + '</td><td>' +
       (r.avgHedgeEff === '' ? '—' : r.avgHedgeEff + '%') + '</td><td>' +
       (r.worstRoundEff === '' ? '—' : r.worstRoundEff + '%') + '</td><td>' + r.avgVol +
