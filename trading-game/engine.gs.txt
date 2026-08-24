@@ -1520,8 +1520,21 @@ function getMyState(code) {
   });
 
   if (!a) {
-    out.error = 'No account for code "' + player.toUpperCase() + '". Check the code your ' +
-                'lecturer gave you: O and I are never used, so a 0 is a zero and a 1 is a one.';
+    // A code we ISSUED but have not opened an account for yet is NOT a wrong
+    // code. Accounts are created by the nightly job, so before term every real
+    // code looks identical to a typo -- and telling a student their correct
+    // code is wrong is both false and alarming.
+    var issued = readSheet_(SHEETS.STUDENTS).some(function (s) {
+      return String(s.player).toLowerCase().trim() === player;
+    });
+    if (issued) {
+      out.notStarted = true;
+      out.error = 'Code recognised. The game has not started yet: your account opens on ' +
+                  ymd_(c.GAME_START) + ' and your first mandate arrives that day.';
+    } else {
+      out.error = 'No account for code "' + player.toUpperCase() + '". Check the code your ' +
+                  'lecturer gave you: O and I are never used, so a 0 is a zero and a 1 is a one.';
+    }
     return out;
   }
   out.found = true;

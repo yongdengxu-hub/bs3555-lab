@@ -25,6 +25,7 @@
   tr.me { background:#FBF3F5; font-weight:600; }
   .mand { background:#EDF3F8; border-left:3px solid var(--steel); padding:10px 12px; border-radius:4px; font-size:.9rem; }
   .err  { background:#FBE9EA; border-left:3px solid #B2182B; padding:10px 12px; border-radius:4px; font-size:.9rem; }
+  .note { background:#EAF3EC; border-left:3px solid #1B7837; padding:10px 12px; border-radius:4px; font-size:.9rem; }
   .ok { color:#1B7837; } .bad { color:#B2182B; }
   .muted { color:var(--muted); font-size:.82rem; }
   #spark { width:100%; height:120px; }
@@ -113,13 +114,17 @@ function load(code) {
 }
 
 /** Back to the code box, optionally with a reason. */
-function gate(msg) {
+function gate(msg, reassuring) {
   $('loading').style.display = 'none';
   $('app').style.display = 'none';
   $('chg').style.display = 'none';
   $('gate').style.display = '';
-  if (msg) { $('gateErr').textContent = msg; $('gateErr').style.display = ''; }
-  else { $('gateErr').style.display = 'none'; }
+  if (msg) {
+    $('gateErr').textContent = msg;
+    // "your code is fine, term has not started" is good news, not a failure
+    $('gateErr').className = reassuring ? 'note' : 'err';
+    $('gateErr').style.display = '';
+  } else { $('gateErr').style.display = 'none'; }
   $('code').focus();
 }
 
@@ -145,7 +150,7 @@ if (saved) load(saved); else gate('');
 
 function render(s) {
   // An unrecognised code is a typo, not a failure — send them back to the box.
-  if (!s.found) { gate(s.error || 'Code not recognised.'); return; }
+  if (!s.found) { gate(s.error || 'Code not recognised.', !!s.notStarted); return; }
 
   $('loading').style.display = 'none';
   $('app').style.display = '';
