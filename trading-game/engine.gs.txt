@@ -447,7 +447,23 @@ function nightlyRun() {
     if (!P.rows.length) { log_('ERROR', 'nightlyRun: no prices'); return; }
 
     var rounds = loadRounds_(P);
-    if (!rounds.length) { log_('ERROR', 'nightlyRun: no rounds defined — run "Set up game"'); return; }
+    if (!rounds.length) {
+      // The schedule cannot be built until the price history actually reaches
+      // GAME_START, so a game set up weeks before term has no rounds yet. Build
+      // it on the first night the prices do span the window, instead of making
+      // the lecturer remember to come back and press a menu item on day one.
+      // This only fires when the Rounds sheet is EMPTY, so a hand-edited
+      // schedule is never overwritten.
+      try {
+        var made = generateRounds();
+        log_('INFO', 'nightlyRun: schedule generated automatically, ' + made + ' round(s)');
+        rounds = loadRounds_(P);
+      } catch (err) {
+        log_('INFO', 'nightlyRun: no rounds yet — ' + err.message);
+        return;
+      }
+      if (!rounds.length) { log_('ERROR', 'nightlyRun: rounds still empty after generating'); return; }
+    }
 
     ensureAccounts_(rounds);
     var accounts = loadAccounts_();
