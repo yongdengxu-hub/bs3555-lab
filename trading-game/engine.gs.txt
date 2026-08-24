@@ -144,8 +144,23 @@ function cfg() {
   return o;
 }
 
+// The timezone Sheets itself used when it parsed the dates stored in this file.
+var _tzCache = null;
+function tz_() {
+  if (_tzCache) return _tzCache;
+  try { _tzCache = ss_().getSpreadsheetTimeZone(); } catch (e) { _tzCache = null; }
+  if (!_tzCache) { try { _tzCache = Session.getScriptTimeZone(); } catch (e) { _tzCache = null; } }
+  return (_tzCache = _tzCache || 'Europe/London');
+}
+
 function ymd_(d) {
-  if (d instanceof Date) return Utilities.formatDate(d, 'Etc/GMT', 'yyyy-MM-dd');
+  // Format in the SPREADSHEET's timezone, never GMT. A date typed into Config
+  // as 2026-09-28 is stored as midnight London time, which is 23:00 GMT on the
+  // 27th, so formatting in GMT silently moves every British Summer Time date
+  // back one day. That is invisible in January and wrong for an autumn term:
+  // generateRounds() compares ymd_(GAME_START) against the price dates, so the
+  // game would open a trading day early and quote the wrong date to students.
+  if (d instanceof Date) return Utilities.formatDate(d, tz_(), 'yyyy-MM-dd');
   return String(d).slice(0, 10);
 }
 
