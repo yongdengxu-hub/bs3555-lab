@@ -9,6 +9,11 @@
  * Players are identified ONLY by an opaque code (e.g. FX-7Q42). No name,
  * email or student number is collected anywhere in this project. Keep the
  * code-to-student list in Cardiff OneDrive, never here.
+ *
+ * This project deliberately touches NO Drive files and creates NO Forms, so
+ * it never asks for "see, edit, create and delete all of your Google Drive
+ * files". createTradeForm lives in OPTIONAL_createTradeForm.gs.txt for that
+ * reason; the Form it built is already live.
  */
 
 // ===================================================================
@@ -1163,8 +1168,7 @@ function onOpen() {
   SpreadsheetApp.getUi().createMenu('BS3555 Game')
     .addItem('1. Set up game (safe to re-run)', 'setupGame')
     .addItem('2. Issue player codes', 'generatePlayerCodes')
-    .addItem('3. Create the trade-entry form', 'createTradeForm')
-    .addItem('4. Install nightly trigger', 'installTrigger')
+    .addItem('3. Install nightly trigger', 'installTrigger')
     .addSeparator()
     .addItem('Regenerate round schedule', 'menuGenerateRounds')
     .addItem('Run pricing self-test', 'runSelfTest')
@@ -1234,8 +1238,9 @@ function setupGame() {
     'Sheets created and ' + added + ' price rows loaded.\n' + roundMsg + '\n\n' +
     'Next:\n' +
     '  2. Issue player codes (one per student)\n' +
-    '  3. Create the trade-entry form\n' +
-    '  4. Install nightly trigger\n\n' +
+    '  3. Install nightly trigger\n\n' +
+    'The trade-entry Form already exists; see OPTIONAL_createTradeForm.gs.txt\n' +
+    'in the repo if it ever needs rebuilding.\n\n' +
     'Do NOT put student names, emails or numbers in this spreadsheet. The game runs\n' +
     'on codes alone; keep the code-to-student list in your Cardiff OneDrive.\n\n' +
     'Check the Rounds sheet — you can edit the currency, size and payable/receivable ' +
@@ -1272,51 +1277,6 @@ function menuUpdatePrices() {
   var P = loadPrices_();
   SpreadsheetApp.getUi().alert('Prices refreshed',
     n + ' new row(s).\nLatest: ' + (P.rows.length ? P.rows[P.rows.length - 1].date : 'none'),
-    SpreadsheetApp.getUi().ButtonSet.OK);
-}
-
-/**
- * Creates the trade-entry Google Form and links its responses into this sheet.
- * Responses land in a new sheet; a trigger copies them into Orders as PENDING.
- */
-function createTradeForm() {
-  var ss = ss_();
-  var form = FormApp.create('BS3555 FX Trading Game — trade ticket');
-  form.setDescription(
-    'Submit one trade per response. Orders are filled at the NEXT published closing price, ' +
-    'so you can never trade on a price you have already seen.\n\n' +
-    'Your mandate changes every month. Check the dashboard for this one before you trade.\n\n' +
-    'The game knows you only by your player code, so type it exactly as issued. A code it ' +
-    'does not recognise is rejected, and you will see that on your dashboard.')
-    .setCollectEmail(false)
-    .setLimitOneResponsePerUser(false)
-    .setAllowResponseEdits(false);
-
-  // Deliberately the first question, and deliberately not an email address.
-  form.addTextItem().setTitle('Player code').setRequired(true)
-    .setHelpText('The code your lecturer gave you, e.g. FX-7Q42. Not your name or email.');
-
-  form.addListItem().setTitle('Instrument').setRequired(true)
-    .setChoiceValues(['spot', 'fwd', 'fut', 'call', 'put']);
-  form.addListItem().setTitle('Currency').setRequired(true).setChoiceValues(['usd', 'eur']);
-  form.addListItem().setTitle('Direction').setRequired(true)
-    .setChoiceValues(['buy / long', 'sell / short']);
-  form.addTextItem().setTitle('Size (units of foreign currency)').setRequired(true);
-  form.addListItem().setTitle('Maturity (trading days) — ignored for spot')
-    .setChoiceValues(['21', '63', '126']);
-  form.addTextItem().setTitle('Strike (GBP per FC) — options only, blank = at the money');
-  form.addParagraphTextItem().setTitle('Why this trade? (one or two sentences — this feeds your report)');
-
-  form.setDestination(FormApp.DestinationType.SPREADSHEET, ss.getId());
-
-  ScriptApp.newTrigger('onTradeFormSubmit').forSpreadsheet(ss).onFormSubmit().create();
-
-  SpreadsheetApp.getUi().alert('Form created',
-    'Share this link with students:\n\n' + form.getPublishedUrl() +
-    '\n\nEdit it here:\n' + form.getEditUrl() +
-    '\n\nEmail collection is OFF, on purpose. Students identify themselves with the code ' +
-    'you issued, so no personal data reaches this spreadsheet. Switching email collection ' +
-    'back on would end that.',
     SpreadsheetApp.getUi().ButtonSet.OK);
 }
 
