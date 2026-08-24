@@ -626,6 +626,18 @@ function processDay_(c, P, i, rounds, accounts, positions, orders, navOut, resOu
   // 5. fill orders submitted since the last close
   orders.forEach(function (o) {
     if (o.status !== 'PENDING' && o.status !== '') return;
+
+    // Never fill an order on a day EARLIER than the day it was submitted.
+    // Live this is always true, because the job runs nightly and anything still
+    // PENDING arrived since the last run. It matters whenever the engine replays
+    // a stretch of days at once -- a backfill, or catching up after the trigger
+    // missed a few nights -- where filling everything on the earliest replayed
+    // day would hand the student a price from before they placed the order.
+    // A blank timestamp means "fill at the next close", which is what the
+    // seeded and hand-entered orders rely on.
+    var submitted = o.timestamp ? ymd_(o.timestamp) : '';
+    if (submitted && submitted > px.date) return;
+
     var a = accounts[String(o.player).toLowerCase().trim()];
     if (!a) { o.status = 'REJECTED'; o.note = 'player code not recognised — check the code your lecturer gave you'; return; }
     if (a.bust) { o.status = 'REJECTED'; o.note = 'account is bust'; return; }
@@ -1376,7 +1388,11 @@ function seedDemo() {
     var optKind = (+rd.qty > 0) ? 'call' : 'put';     // payable -> call, receivable -> put
     var tenor = 999;                                   // engine shortens this to the round end
     function order(player, kind, q, note) {
-      appendRow_(SHEETS.ORDERS, { timestamp: new Date(), player: player, kind: kind, ccy: ccy,
+      // Stamp each order inside its OWN round. Without this every seeded order
+      // is pending on the first replayed day, so all four rounds' hedges pile
+      // into round 1 and rounds 2-4 run naked -- which is not what this demo
+      // is meant to show.
+      appendRow_(SHEETS.ORDERS, { timestamp: rd.startDate, player: player, kind: kind, ccy: ccy,
         dir: dir, qty: q, tenor: tenor, strike: '', status: 'PENDING',
         note: 'R' + rd.round + ' ' + note });
     }
