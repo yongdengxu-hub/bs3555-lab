@@ -246,7 +246,7 @@ function optFor_(px, ccy, kind, strike, tenorLeft) {
 
 // ---------------------------------------------------------------- self test
 /**
- * Verifies the engine against the worked numbers in Lecture 7 / the 2024-25
+ * Verifies the engine against the worked numbers in Lecture 6 / the 2024-25
  * exam. Run this from the menu after any edit — if it fails, stop and fix.
  */
 function runSelfTest() {
@@ -258,13 +258,13 @@ function runSelfTest() {
              '   got ' + got.toFixed(5) + '   want ' + want.toFixed(5));
   }
 
-  // Lecture 7 / 2024-25 exam Q4: GBP/EUR, S=1.08, X=1.04, 180d, r=1%, r*=0.5% p.a.
+  // Lecture 6 / 2024-25 exam Q4: GBP/EUR, S=1.08, X=1.04, 180d, r=1%, r*=0.5% p.a.
   var S = 1.08, X = 1.04, tt = 0.5, r = 0.01 * tt, rs = 0.005 * tt, sig = 0.07 * Math.sqrt(tt);
   var F = cipForward(S, r, rs);
-  check('CIP forward (lecture 7)', F, 1.0827, 0.0002);
+  check('CIP forward (lecture 6)', F, 1.0827, 0.0002);
 
   var g = gk(S, X, r, rs, sig);
-  check('GK call  (lecture 7)', g.call, 0.0488, 0.0010);
+  check('GK call  (lecture 6)', g.call, 0.0488, 0.0010);
   check('GK put via parity', g.put, 0.0063, 0.0010);
   check('put-call parity holds', g.call - g.put - (S / (1 + rs) - X / (1 + r)), 0, 1e-9);
   check('delta N(d1)/(1+r*)', g.deltaCall, 0.7975, 0.004);
