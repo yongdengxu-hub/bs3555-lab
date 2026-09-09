@@ -28,7 +28,7 @@
 
   <div class="card">
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:12px;">
-      <label class="small">spot today, GBP/USD <span id="v-s"></span><input type="range" id="s" min="0.68" max="0.82" step="0.002" value="0.742"/></label>
+      <label class="small">spot today, USD/GBP <span id="v-s"></span><input type="range" id="s" min="0.68" max="0.82" step="0.002" value="0.742"/></label>
       <label class="small">GBP rate, % p.a. <span id="v-r"></span><input type="range" id="r" min="0" max="8" step="0.25" value="3.75"/></label>
       <label class="small">USD rate, % p.a. <span id="v-rs"></span><input type="range" id="rs" min="0" max="8" step="0.25" value="3.5"/></label>
       <label class="small">volatility, % p.a. <span id="v-sig"></span><input type="range" id="sig" min="4" max="20" step="0.5" value="8"/></label>
@@ -124,7 +124,7 @@ function upd() {
       { label: "call option", data: d2, borderColor: "#275D8C", pointRadius: 0, borderWidth: 2.5 },
       { label: "your S_T", data: dot, borderColor: "#B98A2C", backgroundColor: "#B98A2C", pointRadius: 5, showLine: false }
     ]},
-    options: baseChartOpts("spot at maturity S_T (GBP/USD)", "GBP cost of USD 10m (millions)")
+    options: baseChartOpts("spot at maturity S_T (USD/GBP)", "GBP cost of USD 10m (millions)")
   });
 }
 document.querySelectorAll("input").forEach(el => el.addEventListener("input", upd));

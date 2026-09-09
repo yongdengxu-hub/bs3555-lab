@@ -31,10 +31,10 @@
       <button class="chip mode" data-m="exact">exact N(d)</button>
       <span class="small muted">presets:</span>
       <button class="chip preset" data-s="1.08" data-x="1.04" data-sig="7" data-days="180" data-r="1" data-rs="0.5">2024-25 Q4 (GBP/EUR call)</button>
-      <button class="chip preset" data-s="18.6" data-x="20" data-sig="30" data-days="180" data-r="9" data-rs="4">2026 draft (MXN/USD put)</button>
+      <button class="chip preset" data-s="18.6" data-x="20" data-sig="30" data-days="180" data-r="9" data-rs="4">2026 draft (USD/MXN put)</button>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:12px;">
-      <label class="small">spot S (HC/FC) <span id="v-s"></span><input type="range" id="s" min="0.5" max="25" step="0.01" value="1.08"/></label>
+      <label class="small">spot S (HC per FC) <span id="v-s"></span><input type="range" id="s" min="0.5" max="25" step="0.01" value="1.08"/></label>
       <label class="small">strike X <span id="v-x"></span><input type="range" id="x" min="0.5" max="25" step="0.01" value="1.04"/></label>
       <label class="small">σ, % p.a. <span id="v-sig"></span><input type="range" id="sig" min="1" max="50" step="0.5" value="7"/></label>
       <label class="small">days (360-yr) <span id="v-days"></span><input type="range" id="days" min="30" max="360" step="30" value="180"/></label>
