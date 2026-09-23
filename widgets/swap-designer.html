@@ -12,7 +12,7 @@
     <div style="flex:1 1 auto;">
       <div class="code">BS3555 · interactive lab</div>
       <h1>Swap designer</h1>
-      <p class="sub">Comparative advantage, a bank in the middle, and 14 marks. Exam question 5(a).</p>
+      <p class="sub">Comparative advantage, a bank in the middle, and the check. Exam question 5(i).</p>
     </div>
     <a class="crumb" href="../index.html">← back to lab</a>
   </div>
@@ -67,7 +67,7 @@
       <div class="ex labour">
         <p class="h"><span class="pill labour">Careers</span>Treasury interviews love this table</p>
         <p class="b">"Here are four rates and a bank margin: design the swap" appears in corporate-treasury and markets interviews because it tests arithmetic, direction sense and verification discipline in five minutes. The habit that impresses: checking every leg nets out, which the verify table does below.</p>
-        <span class="k">→ The link: exam Q5(a) gives 14 marks for exactly what the reveal shows, including the verification.</span>
+        <span class="k">→ The link: exam Question 5(i) gives its marks for exactly what the reveal shows, including the check.</span>
       </div>
     </div>
   </div>
@@ -83,11 +83,11 @@ document.getElementById("reveal").addEventListener("click", () => {
   const bank = +document.getElementById("bank").value;
   const wantAflt = document.getElementById("wantA").value === "flt";
   const sFix = fixB - fixA, sFlt = fltB - fltA;
-  const gain = Math.abs(sFix - sFlt) - bank, each = gain / 2;
+  const total = Math.abs(sFix - sFlt), gain = total - bank, each = gain / 2;   // total gain first, bank margin off, then split
 
   const out = document.getElementById("out"); out.style.display = "block";
   document.getElementById("m-spr").innerHTML = `<div class="small muted">spreads (fixed / floating)</div><b>${sFix.toFixed(2)}% / ${sFlt.toFixed(2)}%</b>`;
-  document.getElementById("m-gain").innerHTML = `<div class="small muted">total gain after bank</div><b class="${gain>0?"ok":"bad"}">${gain.toFixed(2)}% (${each.toFixed(3)}% each)</b>`;
+  document.getElementById("m-gain").innerHTML = `<div class="small muted">total gain / left after bank</div><b class="${gain>0?"ok":"bad"}">${total.toFixed(2)}% / ${gain.toFixed(2)}% (${each.toFixed(3)}% each)</b>`;
 
   if (gain <= 0) {
     document.getElementById("m-landA").innerHTML = `<div class="small muted">verdict</div><b class="bad">no swap</b>`;
@@ -107,7 +107,7 @@ document.getElementById("reveal").addEventListener("click", () => {
   const borrowB = aBorrowsFix ? `floating at SONIA+${fltB.toFixed(2)}%` : `fixed at ${fixB.toFixed(2)}%`;
   document.getElementById("steps").innerHTML = `
     <b>1. Spreads:</b> fixed ${sFix.toFixed(2)}%, floating ${sFlt.toFixed(2)}%.<br/>
-    <b>2. Gain:</b> |difference| − bank = |${sFix.toFixed(2)} − ${sFlt.toFixed(2)}| − ${bank.toFixed(2)} = <b>${gain.toFixed(2)}%</b>, split <b>${each.toFixed(3)}%</b> each.<br/>
+    <b>2. Total gain:</b> difference of the spreads = |${sFix.toFixed(2)} − ${sFlt.toFixed(2)}| = <b>${total.toFixed(2)}%</b>. Deduct the bank's margin first: ${total.toFixed(2)} − ${bank.toFixed(2)} = <b>${gain.toFixed(2)}%</b>, then split: <b>${each.toFixed(3)}%</b> each.<br/>
     <b>3. Borrowing:</b> A borrows ${borrowA} (its comparative advantage); B borrows ${borrowB}; both swap through the bank.<br/>
     <b>4. Landing rates:</b> each firm's target-market rate minus its share: A pays <b>${landA}</b>, B pays <b>${landB}</b>.`;
 
@@ -115,7 +115,7 @@ document.getElementById("reveal").addEventListener("click", () => {
     <tr><th>check</th><th>calculation</th><th>result</th></tr>
     <tr><td>A saves</td><td>${wantAflt ? `(SONIA+${fltA.toFixed(2)}) − (${landA})` : `${fixA.toFixed(2)} − (${landA})`}</td><td class="ok">${each.toFixed(3)}% ✓</td></tr>
     <tr><td>B saves</td><td>${wantAflt ? `${fixB.toFixed(2)} − ${landB}` : `(SONIA+${fltB.toFixed(2)}) − (${landB})`}</td><td class="ok">${each.toFixed(3)}% ✓</td></tr>
-    <tr><td>bank nets</td><td>gain − A's share − B's share = ${(gain + bank).toFixed(2)} − ${each.toFixed(3)} − ${each.toFixed(3)}</td><td class="ok">${bank.toFixed(2)}% ✓</td></tr>
+    <tr><td>the check</td><td>A's saving + B's saving + bank margin = ${each.toFixed(3)} + ${each.toFixed(3)} + ${bank.toFixed(2)}</td><td class="ok">${(2 * each + bank).toFixed(2)}% = total gain ${total.toFixed(2)}% ✓</td></tr>
     <tr><td>legs cancel</td><td>each firm receives from the bank exactly what it pays its own lender</td><td class="ok">by construction ✓</td></tr>`;
 });
 </script>

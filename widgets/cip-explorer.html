@@ -130,7 +130,7 @@ function upd() {
   document.getElementById("legs").innerHTML = legs;
 
   const diffs = [], fs = [];
-  for (let dd = -6; dd <= 6; dd += 0.25) { diffs.push(dd); fs.push(S * (1 + (rpa + dd) / 100 * tau) / (1 + rpa / 100 * tau)); }
+  for (let dd = -6; dd <= 6; dd += 0.25) { diffs.push(dd); fs.push(S * (1 + (rspa + dd) / 100 * tau) / (1 + rspa / 100 * tau)); }   // hold r* fixed, r = r* + differential
   if (chart) chart.destroy();
   chart = new Chart(document.getElementById("cipChart"), {
     type: "line",

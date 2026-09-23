@@ -258,7 +258,7 @@ function runSelfTest() {
              '   got ' + got.toFixed(5) + '   want ' + want.toFixed(5));
   }
 
-  // Lecture 6 / 2024-25 exam Q4: GBP/EUR, S=1.08, X=1.04, 180d, r=1%, r*=0.5% p.a.
+  // Lecture 6 / 2024-25 exam Q4: EUR/GBP, S=1.08, X=1.04, 180d, r=1%, r*=0.5% p.a.
   var S = 1.08, X = 1.04, tt = 0.5, r = 0.01 * tt, rs = 0.005 * tt, sig = 0.07 * Math.sqrt(tt);
   var F = cipForward(S, r, rs);
   check('CIP forward (lecture 6)', F, 1.0827, 0.0002);
