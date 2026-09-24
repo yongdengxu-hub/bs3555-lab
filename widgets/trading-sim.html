@@ -19,6 +19,11 @@
   .rchip.now { border-color:#8A1538; background:#F7EDF0; font-weight:600; }
   .rchip.done { background:#F2F7F2; }
   .rchip small { display:block; color:var(--muted); font-weight:400; }
+  details.wk { border:1px solid #e0e0e0; border-radius:6px; margin:6px 0; background:#fcfcfd; }
+  details.wk > summary { cursor:pointer; padding:7px 10px; font-size:13px; }
+  details.wk > summary small { display:block; color:var(--muted); font-weight:400; }
+  details.wk ol { margin:0 0 6px; padding:0 12px 0 30px; font-size:12.5px; line-height:1.45; }
+  details.wk .chk { padding:0 12px 9px; font-size:12px; }
 </style>
 </head>
 <body>
@@ -106,7 +111,9 @@
         <div class="maths" style="display:block;margin-top:8px;font-size:12.5px;" id="quote"></div>
         <button id="doTrade" style="width:100%;margin-top:8px;">Place trade</button>
         <div class="small muted" style="margin-top:6px;">
-          Derivatives mature at the round end. Costs: spot 0.02%, fwd 0.05%, fut 0.03%, options 2% of premium.
+          Derivatives mature at the round end. Costs work like a bank's bid-ask spread (Lecture 1): you buy a
+          little above the mid rate and sell a little below it. Spot 0.02%, forward 0.05%, future 0.03%, options 2% of
+          the premium. All prices, strikes included, are in pounds per unit of foreign currency (USD/GBP, EUR/GBP).
         </div>
       </div>
 
@@ -121,6 +128,13 @@
     <div style="margin-top:16px;">
       <div class="small muted" style="margin-bottom:2px;" id="chartlab"></div>
       <div style="position:relative;height:200px;"><canvas id="eqChart"></canvas></div>
+    </div>
+
+    <div style="margin-top:14px;" id="workWrap">
+      <div class="small muted" style="margin-bottom:4px;"><b>Show the working</b>: each trade and each daily
+        mark on your book this round, worked out the way the exam wants it, with your own numbers. It is the
+        same code as the graded game's dashboard. Click a line to open it.</div>
+      <div id="work"></div>
     </div>
 
     <div style="margin-top:14px;">
@@ -140,6 +154,9 @@
         <div class="metric kpi" id="t-done"></div>
       </div>
       <table class="results" id="rtable" style="margin-top:10px;"></table>
+      <div class="small muted" style="margin-top:6px;">Hedge effectiveness = 1 minus (variance of your daily
+        net-worth changes / variance if you had done nothing): the share of the risk you removed, the same idea
+        as the R&sup2; of a hedge in Lecture 4.</div>
     </div>
   </div>
 
@@ -170,6 +187,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script src="../assets/fxlib.js"></script>
+<script src="../trading-game/working.js"></script>
 <script>
 // ---------------------------------------------------------------- config
 // Mirrors 00_Config.gs / 03_Engine.gs in the Apps Script version.
@@ -199,16 +217,32 @@ const isMandate = () => mode === 'mandate';
 const rd = () => rounds[cur];
 
 // ---------------------------------------------------------------- pricing
-function priceForward(ccy, tenor) {
-  const r = row();
-  return cipForward(r[ccy], r.rg * tau(Math.max(tenor, 1)), (ccy === 'usd' ? r.ru : r.re) * tau(Math.max(tenor, 1)));
+// The same four functions as 01_Pricing.gs in the graded game. The simulator
+// prices with them, and the "show the working" panel (../trading-game/working.js,
+// the game's own 07_Working.gs) explains every number from them.
+function mktInputs_(px, ccy, days) {
+  const t = tau(days), rf = ccy === 'usd' ? px.ru : px.re;
+  return { S: px[ccy], days, t, rAnn: px.rg, rsAnn: rf, r: px.rg * t, rs: rf * t,
+           volAnn: ccy === 'usd' ? px.vu : px.ve };
 }
-function priceOption(ccy, kind, strike, tenorLeft) {
-  const r = row(), t = tau(Math.max(tenorLeft, 0.5));
-  const vol = ccy === 'usd' ? r.vu : r.ve;
-  const g = gk(r[ccy], strike, r.rg * t, (ccy === 'usd' ? r.ru : r.re) * t, vol * Math.sqrt(t));
+function fwdFor_(px, ccy, tenor) {
+  const m = mktInputs_(px, ccy, Math.max(tenor, 1));
+  return cipForward(m.S, m.r, m.rs);
+}
+function optGk_(px, ccy, strike, tenorLeft) {
+  const m = mktInputs_(px, ccy, Math.max(tenorLeft, 0.5));
+  return gk(m.S, strike, m.r, m.rs, m.volAnn * Math.sqrt(m.t));
+}
+function optFor_(px, ccy, kind, strike, tenorLeft) {
+  const g = optGk_(px, ccy, strike, tenorLeft);
   return kind === 'call' ? g.call : g.put;
 }
+function priceForward(ccy, tenor) { return fwdFor_(row(), ccy, tenor); }
+function priceOption(ccy, kind, strike, tenorLeft) { return optFor_(row(), ccy, kind, strike, tenorLeft); }
+// What the working needs from the engine, answered by this page's own book.
+function posValue_(px, k, p) { return posValue(p); }          // called with today's row only
+function roundStats_() { return metrics(); }
+function ymd_(d) { return String(d).slice(0, 10); }
 function posValue(p) {
   const r = row();
   if (p.status === 'CLOSED') return 0;   // settled already — must not be valued again
@@ -403,7 +437,7 @@ function quote() {
   if (kind === 'fwd' || kind === 'fut') {
     const F = priceForward(ccy, ten);
     html += `<br/>CIP ${kind === 'fut' ? 'futures' : 'forward'} = <b>${fmt(F, 4)}</b>
-             ${F > r[ccy] ? '(premium)' : '(discount)'} &nbsp;·&nbsp; notional £${fmt0(qty * r[ccy])}`;
+             (${ccy.toUpperCase()} at a forward ${F > r[ccy] ? 'premium' : 'discount'}) &nbsp;·&nbsp; notional £${fmt0(qty * r[ccy])}`;
     if (kind === 'fut') html += `<br/>margin ≈ <b>£${fmt0(MARGIN.fut * qty * r[ccy])}</b>`;
   }
   if (kind === 'call' || kind === 'put') {
@@ -443,7 +477,8 @@ function trade() {
     if (kind === 'fut' && nav() < marginReq() + MARGIN.fut * Math.abs(qty) * r[ccy]) {
       flash('Rejected: not enough free margin.'); return;
     }
-    book.push({ id: uid++, kind, ccy, qty, entry: F, lastF: F, strike: null, matIdx: i + ten, status: 'OPEN' });
+    book.push({ id: uid, posId: 'P' + uid++, kind, ccy, qty, entry: F, lastF: F, strike: null, matIdx: i + ten,
+                status: 'OPEN', openDate: r.date, round: isMandate() ? rd().round : 0 });
   } else {
     const X = +document.getElementById('t-strike').value || r[ccy];
     const prem = priceOption(ccy, kind, X, ten);
@@ -453,7 +488,8 @@ function trade() {
       flash('Rejected: not enough margin to write this option.'); return;
     }
     cash -= paid;
-    book.push({ id: uid++, kind, ccy, qty, entry: prem, strike: X, matIdx: i + ten, status: 'OPEN' });
+    book.push({ id: uid, posId: 'P' + uid++, kind, ccy, qty, entry: prem, strike: X, matIdx: i + ten,
+                status: 'OPEN', openDate: r.date, round: isMandate() ? rd().round : 0 });
   }
   nTrades++; roundTrades++;
   navHist[navHist.length - 1] = nav();
@@ -505,14 +541,15 @@ function metrics() {
   const sd = Math.sqrt(rets.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1));
   let peak = navHist[0], dd = 0;
   navHist.forEach(v => { peak = Math.max(peak, v); if (peak > 0) dd = Math.min(dd, v / peak - 1); });
-  let he = null;
+  let he = null, bsd = null;
   if (bench.length > 2) {
     const bm = bench.reduce((a, b) => a + b, 0) / bench.length;
-    const bsd = Math.sqrt(bench.reduce((a, b) => a + (b - bm) ** 2, 0) / (bench.length - 1));
+    bsd = Math.sqrt(bench.reduce((a, b) => a + (b - bm) ** 2, 0) / (bench.length - 1));
     if (bsd > 0) he = 1 - (sd * sd) / (bsd * bsd);
   }
   return { change: navHist[0] !== 0 ? navHist[navHist.length - 1] / navHist[0] - 1 : 0,
-           vol: sd * Math.sqrt(252), dd, worst: Math.min(...rets), he };
+           vol: sd * Math.sqrt(252), dd, worst: Math.min(...rets), he,
+           sdDaily: sd, benchSdDaily: he === null ? null : bsd, nDays: n };
 }
 
 // ---------------------------------------------------------------- render
@@ -522,7 +559,7 @@ function render() {
   const m = metrics();
 
   document.getElementById('datelab').innerHTML =
-    `<b>${r.date}</b> &nbsp;·&nbsp; USD ${fmt(r.usd, 4)} · EUR ${fmt(r.eur, 4)} GBP per unit` +
+    `<b>${r.date}</b> &nbsp;·&nbsp; USD/GBP ${fmt(r.usd, 4)} (GBP/USD ${fmt(1 / r.usd, 4)}) · EUR/GBP ${fmt(r.eur, 4)}` +
     (isMandate() ? ` &nbsp;·&nbsp; round ${rd().round} of ${rounds.length}, day ${i - rd().startIdx + 1} of ${ROUND_DAYS + 1}` : '');
 
   // round strip
@@ -543,8 +580,9 @@ function render() {
     document.getElementById('mandateBox').innerHTML = liab.open
       ? `<div class="mand"><b>Round ${rd().round}.</b> You ${liab.qty > 0 ? 'must pay' : 'will receive'}
          <b>${fmt0(Math.abs(liab.qty))} ${liab.ccy.toUpperCase()}</b> in <b>${left} trading days</b>.
-         Working capital <b>£${fmt0(rd().capital)}</b>. Fixing it with a forward today is worth
-         <b>£${fmt0(lock)}</b>. Hedge by <b>${liab.qty > 0 ? 'buying' : 'selling'}
+         Working capital <b>£${fmt0(rd().capital)}</b>. A forward ${liab.qty > 0 ? 'bought' : 'sold'} today would
+         fix the amount at about <b>£${fmt0(lock)}</b>, ${liab.qty > 0 ? 'paid' : 'received'} when the mandate settles.
+         Hedge by <b>${liab.qty > 0 ? 'buying' : 'selling'}
          ${liab.ccy.toUpperCase()} forward</b>${liab.qty > 0 ? ' (or a call)' : ' (or a put)'}.</div>`
       : `<div class="mand"><b>Round ${rd().round} settled.</b> The mandate
          ${liab.cost >= 0 ? 'cost you <b>£' + fmt0(liab.cost) + '</b>' : 'brought in <b>£' + fmt0(-liab.cost) + '</b>'}.
@@ -563,7 +601,7 @@ function render() {
 
   let al = '';
   if (flashMsg) al += `<div class="warn" style="margin-bottom:6px;">${flashMsg}</div>`;
-  if (liqMsg) al += `<div class="bust" style="margin-bottom:6px;"><b>Liquidated.</b> ${liqMsg}: equity fell below the margin you owed, so every position was closed at the market. This is the ruin risk from Lecture 4 — being right later does not help if you cannot fund the position today.</div>`;
+  if (liqMsg) al += `<div class="bust" style="margin-bottom:6px;"><b>Liquidated.</b> ${liqMsg}: your net worth fell below the margin required, so every position was closed at the market. This simulator has one margin level and no chance to top up; on an exchange, when the balance falls below maintenance you top it back up to the initial margin (Lecture 4). A trader who cannot meet the call is closed out, however right they turn out to be later.</div>`;
   if (bust) al += `<div class="bust"><b>You are bust.</b> Net worth reached zero this round.</div>`;
   else if (mreq > 0 && N < mreq * 1.25) al += `<div class="warn">Margin warning: free margin is nearly gone.</div>`;
   if (isMandate() && cur === rounds.length - 1 && i >= rd().endIdx)
@@ -626,6 +664,39 @@ function render() {
     : 'Equity vs. a SONIA deposit';
 
   quote(); drawChart();
+  try { renderWorking(); } catch (e) { document.getElementById('work').innerHTML = ''; }
+}
+
+let WP = null;                         // { rows, idx } for the working code
+function workingNow() {
+  if (typeof buildWorking_ !== 'function' || !WP) return null;
+  const c = { COST_SPOT: COST.spot, COST_FWD: COST.fwd, COST_FUT: COST.fut, COST_OPT: COST.opt,
+              MARGIN_FUT: MARGIN.fut };
+  const r0 = isMandate() ? rd() : null;
+  const a = { round: r0 ? r0.round : 0 };
+  const myNav = r0 ? navHist.map((v, k) => ({ date: dateHist[k], round: r0.round, nav: v })) : [];
+  const rdW = r0 ? { round: r0.round, startDate: rows[r0.startIdx].date, endDate: rows[r0.endIdx].date } : null;
+  return buildWorking_(c, WP, i, a, book, [], myNav, [], { nav: nav(), margin: marginReq() }, rdW);
+}
+function escW(t) {
+  return String(t === null || t === undefined ? '' : t).replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+const workOpen = new Set();              // blocks the student has opened stay open as days pass
+const workKey = t => String(t).split(',')[0];
+function renderWorking() {
+  const box = document.getElementById('work'), w = workingNow();
+  const b = w && w.blocks ? w.blocks : [];
+  box.innerHTML = b.length ? b.map(k => '<details class="wk" data-k="' + escW(workKey(k.title)) + '"' +
+      (workOpen.has(workKey(k.title)) ? ' open' : '') + '><summary><b>' + escW(k.title) + '</b>' +
+      (k.label ? '<small>' + escW(k.label) + '</small>' : '') + '</summary><ol>' +
+      (k.lines || []).map(l => '<li>' + escW(l) + '</li>').join('') + '</ol>' +
+      (k.check ? '<div class="chk ' + (k.check.ok ? 'ok' : 'muted') + '">' + escW(k.check.text) + '</div>' : '') +
+      '</details>').join('')
+    : '<div class="small muted">Place a trade and the working appears here.</div>';
+  box.querySelectorAll('details.wk').forEach(d => d.addEventListener('toggle', () => {
+    if (d.open) workOpen.add(d.dataset.k); else workOpen.delete(d.dataset.k);
+  }));
 }
 
 function drawChart() {
@@ -687,6 +758,7 @@ document.getElementById('hedgeMe').addEventListener('click', autoHedge);
 fetch('../assets/simdata.json').then(r => r.json()).then(j => {
   DATA = j;
   rows = j.rows.map(r => ({ date: r.d, usd: r.usd, eur: r.eur, rg: r.rg, ru: r.ru, re: r.re, vu: r.vu, ve: r.ve }));
+  WP = { rows, idx: {} }; rows.forEach((x, k) => { WP.idx[x.date] = k; });
   reset();
 }).catch(e => { document.getElementById('alerts').innerHTML = `<div class="bust">Could not load price data: ${e.message}</div>`; });
 </script>

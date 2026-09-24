@@ -7,6 +7,12 @@ openly. No exam answers, no student data.
 
 - `engine.gs.txt`     — the whole Apps Script project as one file
 - `dashboard.html.txt` — the student dashboard
+- `working.js`: the dashboard's "show the working" (07_Working.gs), also
+  loaded by `widgets/trading-sim.html` so the practice widget explains trades
+  with the same code
+
+These are copies. After any change to the split files, run
+`node test/sync_check.js --write` in the module folder to refresh them.
 
 Canonical source, split into readable files, lives in the module folder under
 `2026 Autumn (Xu)/TradingGame/apps-script/`.

@@ -29,6 +29,12 @@
   .ok { color:#1B7837; } .bad { color:#B2182B; }
   .muted { color:var(--muted); font-size:.82rem; }
   #spark { width:100%; height:120px; }
+  details.wk { border:1px solid var(--line); border-radius:6px; margin:6px 0; background:#FCFCFD; }
+  details.wk > summary { cursor:pointer; padding:8px 10px; font-size:.88rem; }
+  details.wk > summary small { display:block; color:var(--muted); font-weight:400; }
+  details.wk ol { margin:0 0 6px; padding:0 12px 0 32px; font-size:.86rem; line-height:1.45; }
+  details.wk ol li { margin:3px 0; }
+  details.wk .chk { padding:0 12px 10px; font-size:.82rem; }
 </style>
 </head>
 <body>
@@ -75,6 +81,10 @@
       <div class="grid" id="kpis"></div>
       <canvas id="spark" style="margin-top:12px;"></canvas>
       <div class="muted" id="asof" style="margin-top:6px;"></div>
+      <p class="muted" style="margin-top:8px;">Margin: futures and written options need collateral. The game
+        uses one margin level, with no separate maintenance level and no chance to top up. If your net worth
+        falls below the margin required, every position is closed at that day's price. Lecture 4 shows how
+        the exchange does it: when the balance falls below maintenance, you top it back up to the initial margin.</p>
     </div>
 
     <div class="card">
@@ -82,18 +92,30 @@
       <table id="pos"></table>
     </div>
 
+    <div class="card" id="workCard" style="display:none;">
+      <h2>Show the working</h2>
+      <p class="muted">Each trade and each daily mark on your book in this round, worked out the way
+        the exam wants it, with your own numbers. The numbers come from the same formulas that priced
+        your trades. Click a line to open it.</p>
+      <div id="work"></div>
+    </div>
+
     <div class="card">
       <h2>Recent orders</h2>
       <table id="ord"></table>
       <p class="muted" style="margin-top:8px;">Orders fill at the next published closing price, so you can
-        never trade on a price you have already seen. A rejected order tells you why in the note column.</p>
+        never trade on a price you have already seen. A rejected order tells you why in the note column.
+        Each fill includes a small cost, like the bank's bid-ask spread in Lecture 1: you buy a little
+        above the mid rate and sell a little below it.</p>
     </div>
 
     <div class="card">
       <h2>Leaderboard — ranked on hedge effectiveness</h2>
       <table id="lb"></table>
-      <p class="muted" style="margin-top:8px;">Rank is by how much of the payable's risk you removed, not by
-        profit. Over one term, FX profit is mostly luck; managing a known exposure is the skill being assessed.</p>
+      <p class="muted" style="margin-top:8px;">Rank is by how much of the mandate's risk you removed, not by
+        profit. Hedge effectiveness = 1 minus (variance of your daily net-worth changes / variance if you had
+        done nothing): the share of the risk you removed, the same idea as the R&sup2; of a hedge in Lecture 4.
+        Over one term, FX profit is mostly luck; managing a known exposure is the skill being assessed.</p>
     </div>
   </div>
 </div>
@@ -158,9 +180,11 @@ function render(s) {
 
   document.getElementById('msg').innerHTML = s.error ? '<div class="err">' + s.error + '</div>' : '';
   document.getElementById('asof').textContent =
-    'Prices as of ' + s.latestDate + (s.spot ? '  ·  USD ' + s.spot.usd.toFixed(4) +
-    ' · EUR ' + s.spot.eur.toFixed(4) + ' GBP per unit  ·  USD realised vol ' +
-    (100 * s.spot.vu).toFixed(1) + '%' : '');
+    'Prices as of ' + s.latestDate + (s.spot ? '  ·  USD/GBP ' + s.spot.usd.toFixed(4) +
+    ' pounds per dollar (GBP/USD ' + (1 / s.spot.usd).toFixed(4) + ')  ·  EUR/GBP ' +
+    s.spot.eur.toFixed(4) + ' pounds per euro  ·  USD realised vol ' +
+    (100 * s.spot.vu).toFixed(1) + '%. The game quotes every price, strikes included, ' +
+    'in pounds per unit of foreign currency.' : '');
 
   if (!s.found) { renderLb(s); return; }
 
@@ -172,8 +196,9 @@ function render(s) {
         (m.isPayable
           ? 'must pay <b>' + n(m.qty) + ' ' + m.ccy + '</b>'
           : 'will receive <b>' + n(m.qty) + ' ' + m.ccy + '</b>') +
-        ' in <b>' + m.daysLeft + ' trading days</b>. Fixing it with a forward today is worth <b>£' +
-        n(m.lockNow, 2) + '</b>. On your books it currently marks at <b>£' + n(m.value, 2) +
+        ' in <b>' + m.daysLeft + ' trading days</b>. A forward ' + (m.isPayable ? 'bought' : 'sold') +
+        ' today would fix the amount at about <b>£' + n(m.lockNow, 2) + '</b>, ' +
+        (m.isPayable ? 'paid' : 'received') + ' when the mandate settles. On your books it currently marks at <b>£' + n(m.value, 2) +
         '</b>. Hedge it by <b>' + (m.isPayable ? 'buying' : 'selling') + ' ' + m.ccy +
         ' forward</b>, or with a ' + (m.isPayable ? 'call' : 'put') +
         '. Your job is to make the outcome <i>certain</i>.</div>'
@@ -219,7 +244,7 @@ function render(s) {
         '</td><td>' + r.entry + '</td><td>' + (r.strike || '—') + '</td><td>' + r.daysLeft +
         '</td><td class="' + (r.value >= 0 ? 'ok' : 'bad') + '">£' + n(r.value, 2) + '</td></tr>';
       }).join('')
-    : '<tr><td class="muted">No open positions. Your payable is unhedged.</td></tr>';
+    : '<tr><td class="muted">No open positions. If your mandate is still open, it is unhedged.</td></tr>';
 
   document.getElementById('ord').innerHTML =
     '<tr><th>submitted</th><th>order</th><th>size</th><th>status</th><th>filled</th><th>note</th></tr>' +
@@ -233,6 +258,28 @@ function render(s) {
 
   renderLb(s);
   spark(s.nav);
+  // The working is an optional extra: if it fails, hide it and keep the page.
+  try { renderWorking(s.working); } catch (e) { $('workCard').style.display = 'none'; }
+}
+
+function esc(t) {
+  return String(t === null || t === undefined ? '' : t).replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function renderWorking(w) {
+  var card = $('workCard'), box = $('work');
+  if (!w) { card.style.display = 'none'; return; }
+  card.style.display = '';
+  if (w.error) { box.innerHTML = '<p class="muted">' + esc(w.error) + '</p>'; return; }
+  var b = w.blocks || [];
+  box.innerHTML = b.length ? b.map(function (k) {
+    return '<details class="wk"><summary><b>' + esc(k.title) + '</b>' +
+      (k.label ? '<small>' + esc(k.label) + '</small>' : '') + '</summary><ol>' +
+      (k.lines || []).map(function (l) { return '<li>' + esc(l) + '</li>'; }).join('') + '</ol>' +
+      (k.check ? '<div class="chk ' + (k.check.ok ? 'ok' : 'muted') + '">' + esc(k.check.text) + '</div>' : '') +
+      '</details>';
+  }).join('') : '<p class="muted">Nothing to show yet in this round.</p>';
 }
 
 function kpi(label, val, cls) {
