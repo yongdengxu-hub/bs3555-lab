@@ -12,14 +12,55 @@
     <div style="flex:1 1 auto;">
       <div class="code">BS3555 · interactive lab</div>
       <h1>FX quote &amp; arbitrage trainer</h1>
-      <p class="sub">Invert quotes, build the synthetic cross, spot the arbitrage. Exam question 1.</p>
+      <p class="sub">Read the quote the right way round, invert it, build the synthetic cross, spot the arbitrage. Exam question 1.</p>
     </div>
     <a class="crumb" href="../index.html">← back to lab</a>
   </div>
 </header>
 
 <main class="wrap">
-  <p class="muted" style="margin-top:18px;">
+  <h2 style="margin-top:18px;">Step 1: read the quote the right way round</h2>
+  <div class="card">
+    <p style="margin-top:0;">Most mistakes in Question 1 start before any arithmetic: reading the pair the wrong way round. Four rules, used all semester (Lecture 1):</p>
+    <ol style="margin:0 0 10px 1.2em;padding:0;line-height:1.55;">
+      <li><b>Base first, quote second.</b> In <b>GBP/USD 1.3470</b> the pound is the base and the dollar is the quote. The number is how many units of the <b>quote</b> currency buy <b>one unit of the base</b>: one pound buys 1.3470 dollars. So GBP/USD is <b>dollars per pound, not pounds per dollar</b>. One dollar costs 1/1.3470 = 0.7424 pounds.</li>
+      <li><b>Which currency comes first is a market convention</b> (Bloomberg, Reuters and every dealing screen). The pound, the euro, the Australian and the New Zealand dollar come <b>before</b> the US dollar: GBP/USD, EUR/USD, AUD/USD, NZD/USD. Against almost every other currency the dollar comes <b>first</b>: USD/JPY, USD/CHF, USD/CAD, USD/CNY.</li>
+      <li><b>In this module the rate is FC/HC:</b> the base is the <b>foreign currency</b> and the quote is the <b>home currency</b>. In GBP/USD the <b>dollar is home</b> (a US firm's view) and the pound is foreign. In USD/JPY the <b>yen is home</b> (a Japanese firm's view) and the dollar is foreign. So S is always home currency per one unit of foreign currency.</li>
+      <li><b>A rise in S is a depreciation of the home currency.</b> If GBP/USD rises from 1.3470 to 1.3600, one pound (foreign) now costs more dollars (home): the dollar has depreciated and the pound has appreciated. A fall in S is an appreciation of the home currency.</li>
+    </ol>
+    <div style="overflow-x:auto;">
+    <table class="small" style="border-collapse:collapse;width:100%;min-width:520px;">
+      <thead><tr style="text-align:left;border-bottom:1px solid var(--color-border-secondary, #ccc);">
+        <th style="padding:4px 6px;">pair</th><th style="padding:4px 6px;">rate</th><th style="padding:4px 6px;">meaning</th>
+        <th style="padding:4px 6px;">foreign (base)</th><th style="padding:4px 6px;">home (quote)</th><th style="padding:4px 6px;">if the rate rises</th></tr></thead>
+      <tbody>
+        <tr><td style="padding:4px 6px;"><b>GBP/USD</b></td><td style="padding:4px 6px;">1.3470</td><td style="padding:4px 6px;">1 GBP = 1.3470 USD</td><td style="padding:4px 6px;">GBP</td><td style="padding:4px 6px;">USD</td><td style="padding:4px 6px;">USD depreciates</td></tr>
+        <tr><td style="padding:4px 6px;"><b>EUR/USD</b></td><td style="padding:4px 6px;">1.1519</td><td style="padding:4px 6px;">1 EUR = 1.1519 USD</td><td style="padding:4px 6px;">EUR</td><td style="padding:4px 6px;">USD</td><td style="padding:4px 6px;">USD depreciates</td></tr>
+        <tr><td style="padding:4px 6px;"><b>USD/JPY</b></td><td style="padding:4px 6px;">159.16</td><td style="padding:4px 6px;">1 USD = 159.16 JPY</td><td style="padding:4px 6px;">USD</td><td style="padding:4px 6px;">JPY</td><td style="padding:4px 6px;">JPY depreciates</td></tr>
+        <tr><td style="padding:4px 6px;"><b>EUR/GBP</b></td><td style="padding:4px 6px;">0.8550</td><td style="padding:4px 6px;">1 EUR = 0.8550 GBP</td><td style="padding:4px 6px;">EUR</td><td style="padding:4px 6px;">GBP</td><td style="padding:4px 6px;">GBP depreciates</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p class="small muted" style="margin-bottom:0;">Sercu and some past exam papers write the same rate the other way round. Always read the label before you read the number.</p>
+  </div>
+
+  <div class="card">
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;">
+      <b>Check yourself: reading quotes</b>
+      <span class="small muted" id="rq-score">score 0 / 0</span>
+    </div>
+    <p id="rq-q" style="font-size:1.02rem;margin:10px 0 8px;"></p>
+    <div id="rq-opts" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
+    <div id="rq-num" style="display:none;gap:8px;align-items:center;flex-wrap:wrap;">
+      <input id="rq-input" type="text" inputmode="decimal" style="width:120px;padding:5px 8px;" placeholder="4 decimals" />
+      <button id="rq-check">Check</button>
+    </div>
+    <div id="rq-fb" class="maths" style="display:none;margin-top:10px;"></div>
+    <div style="margin-top:10px;"><button id="rq-next" style="font-size:12px;padding:4px 9px;">↻ next question</button></div>
+  </div>
+
+  <h2 style="margin-top:22px;">Step 2: invert, cross and hunt the arbitrage</h2>
+  <p class="muted" style="margin-top:6px;">
     Every year, exam Q1 hands you two primary quotes against a vehicle currency and a direct cross quote, and asks:
     invert them, build the <b>synthetic</b> cross (worst-case pairing: bid÷ask one way, ask÷bid the other), then compare
     the two bands. <b>No overlap = arbitrage. Overlap but different = shopping around.</b> This trainer deals you fresh
@@ -155,6 +196,81 @@ function reveal() {
     })
   });
 }
+
+// ---------------------------------------------------------------- Step 1: reading quotes quiz
+const RQ = [
+  { base: "GBP", quote: "USD", rate: 1.3470, nb: "pound", nq: "US dollar" },
+  { base: "EUR", quote: "USD", rate: 1.1519, nb: "euro", nq: "US dollar" },
+  { base: "AUD", quote: "USD", rate: 0.6620, nb: "Australian dollar", nq: "US dollar" },
+  { base: "USD", quote: "JPY", rate: 159.16, nb: "US dollar", nq: "yen" },
+  { base: "USD", quote: "CHF", rate: 0.8010, nb: "US dollar", nq: "Swiss franc" },
+  { base: "USD", quote: "CAD", rate: 1.3720, nb: "US dollar", nq: "Canadian dollar" },
+  { base: "EUR", quote: "GBP", rate: 0.8550, nb: "euro", nq: "pound" }
+];
+let rqRight = 0, rqDone = 0, rqCur = null, rqAnswered = false;
+const dp = p => (p.quote === "JPY" ? 2 : 4);
+const pairOf = p => `${p.base}/${p.quote}`;
+function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+
+function rqMake() {
+  const p = RQ[Math.floor(R() * RQ.length)], P = pairOf(p), r = fmt(p.rate, dp(p));
+  const t = Math.floor(R() * 6);
+  if (t === 0) return { q: `The screen shows <b>${P} ${r}</b>. What does this number mean?`,
+    opts: shuffle([[`1 ${p.base} buys ${r} ${p.quote}`, true], [`1 ${p.quote} buys ${r} ${p.base}`, false]]),
+    why: `${p.base} is written first, so it is the base: the number is how many ${p.quote} buy <b>one ${p.base}</b>. ${P} is ${p.quote} per ${p.base}, not ${p.base} per ${p.quote}.` };
+  if (t === 1) return { q: `In this module every rate is written FC/HC. In <b>${P}</b>, which is the <b>home</b> currency?`,
+    opts: shuffle([[p.quote, true], [p.base, false]]),
+    why: `The home currency is the quote currency, written second: ${p.quote}. ${p.base} (the base) is the foreign currency. So ${P} ${r} is the price of one unit of foreign currency (${p.base}) in home currency (${p.quote}).` };
+  if (t === 2 || t === 3) {
+    const up = R() < 0.5, k = 1 + (up ? 1 : -1) * (0.01 + R() * 0.04), r2 = fmt(p.rate * k, dp(p));
+    const askHome = t === 2, cur = askHome ? p.quote : p.base;
+    const correct = askHome ? (up ? "depreciated" : "appreciated") : (up ? "appreciated" : "depreciated");
+    return { q: `${P} ${up ? "rises" : "falls"} from ${r} to ${r2}. What has happened to the <b>${cur}</b> (the ${askHome ? "home" : "foreign"} currency)?`,
+      opts: [["appreciated", correct === "appreciated"], ["depreciated", correct === "depreciated"]],
+      why: `One ${p.base} now buys ${up ? "more" : "fewer"} ${p.quote}. So the ${p.base} has ${up ? "appreciated" : "depreciated"} and the ${p.quote} has ${up ? "depreciated" : "appreciated"}. The rule: a <b>rise</b> in the rate is a <b>depreciation of the home currency</b> (${p.quote}); a fall is an appreciation.` };
+  }
+  if (t === 4) return { q: `How does a Bloomberg or Reuters dealing screen write the <b>${p.nb}</b> against the <b>${p.nq}</b>?`,
+    opts: shuffle([[P, true], [`${p.quote}/${p.base}`, false]]),
+    why: ["GBP", "EUR", "AUD", "NZD"].includes(p.base)
+      ? `The pound, the euro, the Australian and the New Zealand dollar come before the dollar (and the euro before the pound): ${P}.`
+      : `Against most currencies the US dollar comes first: ${P}.` };
+  const inv = 1 / p.rate;
+  return { num: inv, q: `The screen shows <b>${P} ${r}</b>. How many <b>${p.base}</b> does one ${p.quote} cost? Give 4 decimals.`,
+    why: `One ${p.base} buys ${r} ${p.quote}, so one ${p.quote} costs 1 / ${r} = <b>${fmt(inv, 4)} ${p.base}</b>. That is the inverted pair, ${p.quote}/${p.base}.` };
+}
+
+function rqShow() {
+  rqCur = rqMake(); rqAnswered = false;
+  document.getElementById("rq-q").innerHTML = rqCur.q;
+  const box = document.getElementById("rq-opts"), num = document.getElementById("rq-num");
+  box.innerHTML = ""; document.getElementById("rq-fb").style.display = "none";
+  if (rqCur.num !== undefined) {
+    num.style.display = "flex"; document.getElementById("rq-input").value = "";
+  } else {
+    num.style.display = "none";
+    rqCur.opts.forEach(([label, ok]) => {
+      const b = document.createElement("button"); b.textContent = label;
+      b.addEventListener("click", () => rqAnswer(ok)); box.appendChild(b);
+    });
+  }
+}
+
+function rqAnswer(ok) {
+  if (rqAnswered) return;
+  rqAnswered = true; rqDone++; if (ok) rqRight++;
+  document.getElementById("rq-score").textContent = `score ${rqRight} / ${rqDone}`;
+  const fb = document.getElementById("rq-fb");
+  fb.innerHTML = `${ok ? '<span class="badge ok">correct</span>' : '<span class="badge bad">not quite</span>'} ${rqCur.why}`;
+  fb.style.display = "block";
+}
+
+document.getElementById("rq-check").addEventListener("click", () => {
+  const x = parseFloat(document.getElementById("rq-input").value.replace(",", "."));
+  if (isNaN(x)) return;
+  rqAnswer(Math.abs(x - rqCur.num) <= 0.0001);
+});
+document.getElementById("rq-next").addEventListener("click", rqShow);
+rqShow();
 
 document.getElementById("newq").addEventListener("click", deal);
 document.getElementById("reveal").addEventListener("click", reveal);
